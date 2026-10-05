@@ -2,6 +2,8 @@
 
 Kotlin + Jetpack Compose. Fayllar telefonda **AES-256-GCM** ilə şifrələnir və istifadəçinin öz Google Drive-ındakı **eDrive Storage** qovluğuna yalnız şifrəli halda yüklənir.
 
+Məxfilik siyasəti: [PRIVACY.md](PRIVACY.md). Tərtibatçı heç bir məlumat toplamır.
+
 ## Yüklə
 
 Hazır APK [Releases](https://github.com/abdullaevz/eDrive/releases/latest) bölməsindədir. Faylı telefona yükləyib açın. Tətbiq Play Store-dan olmadığı üçün ilk dəfə "naməlum mənbələrdən quraşdırma" icazəsi soruşulacaq.
