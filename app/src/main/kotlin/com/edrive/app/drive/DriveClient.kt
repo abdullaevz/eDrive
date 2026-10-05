@@ -44,6 +44,9 @@ interface DriveClientProvider {
 interface DriveAuthorizer {
     suspend fun authorize(email: String?): AuthResult
     suspend fun revoke(token: String)
+
+    /** Google Play Services-in bu hesab üçün yadda saxladığı icazəni silir (hesab seçimi yenidən soruşulsun deyə). */
+    suspend fun forgetAccount(email: String) {}
 }
 
 sealed interface AuthResult {

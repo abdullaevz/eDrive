@@ -119,6 +119,12 @@ fun HomeRoute(container: AppContainer, vm: HomeViewModel, onOpen: (String) -> Un
         container.session.endExternalUi()
         if (r.resultCode == android.app.Activity.RESULT_OK) vm.onConsentResult(r.data)
     }
+    val pickAccount = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        container.session.endExternalUi()
+        if (r.resultCode == android.app.Activity.RESULT_OK) {
+            vm.onAccountPicked(r.data?.getStringExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME))
+        }
+    }
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris ->
         container.session.endExternalUi()
         vm.import(uris)
@@ -144,6 +150,14 @@ fun HomeRoute(container: AppContainer, vm: HomeViewModel, onOpen: (String) -> Un
         vm.events.collect { e ->
             when (e) {
                 is HomeEvent.Message -> scope.launch { snackbar.showSnackbar(e.text) }
+                is HomeEvent.PickAccount -> pickAccount.launch(
+                    com.google.android.gms.common.AccountPicker.newChooseAccountIntent(
+                        com.google.android.gms.common.AccountPicker.AccountChooserOptions.Builder()
+                            .setAllowableAccountsTypes(listOf("com.google"))
+                            .setAlwaysShowAccountPicker(true)
+                            .build(),
+                    ),
+                )
                 is HomeEvent.LaunchConsent -> consent.launch(IntentSenderRequest.Builder(e.pendingIntent.intentSender).build())
             }
         }

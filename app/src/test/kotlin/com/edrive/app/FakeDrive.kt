@@ -21,6 +21,7 @@ class FakeDrive(private val email: String = "natiq@gmail.com") : DriveClient, Dr
 
     val nodes = linkedMapOf<String, Node>()
     val revoked = mutableListOf<String>()
+    val forgotten = mutableListOf<String>()
     private var seq = 0
 
     fun filesNamed(suffix: String) = nodes.values.filter { !it.folder && it.name.endsWith(suffix) }
@@ -32,6 +33,7 @@ class FakeDrive(private val email: String = "natiq@gmail.com") : DriveClient, Dr
     // DriveAuthorizer
     override suspend fun authorize(email: String?) = AuthResult.Token("fake-token")
     override suspend fun revoke(token: String) { revoked += token }
+    override suspend fun forgetAccount(email: String) { forgotten += email }
 
     // DriveClient
     override suspend fun about() = DriveAbout(DriveUser(email))

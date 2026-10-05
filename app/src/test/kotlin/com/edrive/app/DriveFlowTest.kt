@@ -149,6 +149,7 @@ class DriveFlowTest {
         // ---------------- Ayırma
         phoneB.connection.disconnect()
         assertEquals(listOf("fake-token"), drive.revoked)
+        assertEquals("Google-un yadda saxladığı hesab icazəsi də silinməlidir", listOf("natiq@gmail.com"), drive.forgotten)
         assertNull(phoneB.db.users().byUsername("natiq")!!.driveUserFolderId)
 
         phoneA.db.close(); phoneB.db.close()

@@ -7,6 +7,7 @@ import com.google.android.gms.auth.GoogleAuthUtil
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.auth.api.identity.RevokeAccessRequest
 import com.google.android.gms.common.api.Scope
 import com.google.android.gms.tasks.Task
 import kotlinx.coroutines.Dispatchers
@@ -61,6 +62,16 @@ class DriveAuth(private val context: Context, private val http: OkHttpClient) : 
             }
         }
         invalidate(token)
+    }
+
+    override suspend fun forgetAccount(email: String) {
+        runCatching {
+            val req = RevokeAccessRequest.builder()
+                .setAccount(Account(email, "com.google"))
+                .setScopes(listOf(Scope(DRIVE_FILE_SCOPE)))
+                .build()
+            client.revokeAccess(req).await()
+        }
     }
 
     companion object {

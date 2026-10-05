@@ -37,8 +37,8 @@ class DriveConnectionService(
         data class NeedsPassword(val remote: VaultHeader) : ConnectOutcome
     }
 
-    /** 1-ci addım: Google hesab seçimi / icazə. Token hazırdırsa birbaşa bağlanır. */
-    suspend fun startConnect(): ConnectOutcome = when (val r = auth.authorize(null)) {
+    /** 1-ci addım: istifadəçinin seçdiyi Google hesabı üçün icazə. Token hazırdırsa birbaşa bağlanır. */
+    suspend fun startConnect(email: String): ConnectOutcome = when (val r = auth.authorize(email)) {
         is AuthResult.NeedsConsent -> throw DriveConsentRequired(r.pendingIntent)
         is AuthResult.Token -> finishConnect(r.accessToken)
     }
@@ -89,6 +89,7 @@ class DriveConnectionService(
         val user = users.byId(session.requireUser().userId) ?: return@withContext
         user.driveEmail?.let { email ->
             runCatching { (auth.authorize(email) as? AuthResult.Token)?.let { auth.revoke(it.accessToken) } }
+            auth.forgetAccount(email)
         }
         users.update(user.copy(driveEmail = null, driveRootFolderId = null, driveUserFolderId = null))
     }

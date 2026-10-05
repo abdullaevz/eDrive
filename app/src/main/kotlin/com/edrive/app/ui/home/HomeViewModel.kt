@@ -29,6 +29,8 @@ import java.io.IOException
 sealed interface HomeEvent {
     data class Message(val text: String) : HomeEvent
     data class LaunchConsent(val pendingIntent: PendingIntent) : HomeEvent
+    /** Google hesab seçmə pəncərəsi açılmalıdır. */
+    data object PickAccount : HomeEvent
 }
 
 data class HomeUi(
@@ -65,7 +67,19 @@ class HomeViewModel(private val c: AppContainer, val userId: Long, val username:
 
     suspend fun thumbnail(id: String): ImageBitmap? = c.fileAccess.thumbnail(userId, id)
 
-    fun connectDrive() = driveOp { handle(c.connection.startConnect()) }
+    /** Hər qoşulmada hesab seçmə pəncərəsi açılır (Google əvvəlki hesabı avtomatik seçməsin deyə). */
+    fun connectDrive() {
+        if (_ui.value.driveBusy) return
+        viewModelScope.launch {
+            c.session.beginExternalUi()
+            _events.send(HomeEvent.PickAccount)
+        }
+    }
+
+    fun onAccountPicked(email: String?) {
+        if (email.isNullOrBlank()) return
+        driveOp { handle(c.connection.startConnect(email)) }
+    }
 
     fun onConsentResult(data: Intent?) = driveOp {
         val token = c.driveAuth.tokenFromConsentResult(data)
