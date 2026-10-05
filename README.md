@@ -6,31 +6,34 @@ Kotlin + Jetpack Compose. Fayllar telefonda **AES-256-GCM** ilə şifrələnir v
 
 Hazır APK [Releases](https://github.com/abdullaevz/eDrive/releases/latest) bölməsindədir. Faylı telefona yükləyib açın. Tətbiq Play Store-dan olmadığı üçün ilk dəfə "naməlum mənbələrdən quraşdırma" icazəsi soruşulacaq.
 
-Özünüz yığmaq üçün (Android SDK lazımdır, IntelliJ IDEA və ya Android Studio):
+## Özünüz yığmaq
 
-```bat
-gradlew.bat assembleDebug      :: → app\build\outputs\apk\debug\app-debug.apk
-gradlew.bat test               :: bütün testlər
+Android SDK lazımdır (Android Studio və ya IntelliJ IDEA).
+
+```bash
+./gradlew assembleDebug   # → app/build/outputs/apk/debug/app-debug.apk
+./gradlew test            # bütün testlər
 ```
 
-## Google ilə qoşulmanın işləməsi üçün (bir dəfəlik)
+Windows-da `gradlew.bat` istifadə edin.
 
-[console.cloud.google.com](https://console.cloud.google.com) saytında:
+### Google Drive girişini qurmaq
 
-1. Yeni layihə yaradın.
-2. **APIs & Services → Library → Google Drive API → Enable**.
-3. **Google Auth Platform / OAuth consent screen**:
-   - Audience: **External**, status: **Testing**;
-   - **Test users** siyahısına öz Gmail ünvanınızı əlavə edin;
-   - Data access (scope): `https://www.googleapis.com/auth/drive.file`.
-4. **Credentials → Create credentials → OAuth client ID → Android**:
+Tətbiq Google Drive-a OAuth ilə qoşulur. Öz yığımınızda "Google ilə qoşul" düyməsinin işləməsi üçün öz Google Cloud layihənizi yaratmalısınız.
 
-   | Sahə | Dəyər |
-   |---|---|
-   | Package name | `com.edrive.app.debug` (debug yığımı) |
-   | SHA-1 | `04:6E:E3:B3:07:53:B2:54:1C:EE:93:42:7E:C2:4C:18:C7:20:BC:28` |
-
-SHA-1 layihədəki sabit `app/debug.keystore`-a aiddir. Kim harada yığırsa yığsın, dəyər eyni qalır. Bu açar yalnız test üçündür. Play Store üçün ayrıca release açarı yaradılmalıdır.
+1. **Paket adını dəyişin.** `app/build.gradle.kts` faylında `applicationId` dəyərini özünüzə məxsus bir adla əvəz edin (məsələn, `com.sizinadınız.edrive`). Google eyni paket adı və SHA-1 cütünü yalnız bir OAuth client-ə bağlamağa icazə verir.
+2. **SHA-1-i öyrənin:**
+   ```bash
+   ./gradlew signingReport
+   ```
+3. [console.cloud.google.com](https://console.cloud.google.com) saytında:
+   1. Yeni layihə yaradın.
+   2. **APIs & Services → Library → Google Drive API → Enable**.
+   3. **Google Auth Platform / OAuth consent screen**:
+      - Audience: **External**;
+      - test rejimində **Test users** siyahısına öz Gmail ünvanınızı əlavə edin;
+      - Data access (scope): `https://www.googleapis.com/auth/drive.file`.
+   4. **Credentials → Create credentials → OAuth client ID → Android**: paket adı (debug yığımı üçün sonuna `.debug` əlavə olunur) və 2-ci addımdakı SHA-1.
 
 Web client ID və ya API key **lazım deyil**: tətbiq yalnız Drive icazəsi istəyir (AuthorizationClient), e-poçtu isə Drive API-dən oxuyur.
 
@@ -90,4 +93,3 @@ testlərdə saxta implementasiyalar istifadə olunur (`app/src/test/.../FakeDriv
 
 - Video və PDF tətbiqdaxili pleyerdə deyil, müvəqqəti deşifrə olunub kənar tətbiqdə açılır. Müvəqqəti fayl kilid zamanı silinir.
 - Kəsilən yükləmə növbəti dəfə əvvəldən başlayır (resumable davamı hələ yoxdur).
-- Google test rejimində yalnız "Test users" siyahısındakı hesablar qoşula bilər.
