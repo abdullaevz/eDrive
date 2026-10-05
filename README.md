@@ -67,7 +67,7 @@ Drive:    eDrive Storage/<istifadəçi>/vault.json   (salt + şifrəli DEK, sirr
 ```
 crypto/                       saf Kotlin: AES-GCM, STREAM şifrə, vault başlığı, manifest (+ JVM testləri)
 app/src/main/kotlin/com/edrive/app/
- ├─ EDriveApp.kt              AppContainer — bütün asılılıqlar burada qurulur (əl ilə DI)
+ ├─ EDriveApp.kt              @HiltAndroidApp; di/ qovluğunda Hilt modulları (AppModule, BindingsModule)
  ├─ data/
  │   ├─ AccountRepository.kt  qeydiyyat, giriş, barmaq izi
  │   ├─ Session.kt            açıq vault (DEK yalnız RAM-da)

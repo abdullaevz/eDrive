@@ -2,6 +2,11 @@
 
 Format [Keep a Changelog](https://keepachangelog.com/) əsasındadır. Versiya nömrələri `MAJOR.MINOR.PATCH` formasındadır.
 
+## [Buraxılmamış]
+
+### Dəyişdi
+- Əl ilə asılılıq idarəsi (`AppContainer`) Hilt ilə əvəz olundu. İstifadəçiyə görünən dəyişiklik yoxdur.
+
 ## [0.1.0] — ilk test versiyası
 
 ### Əlavə olundu
