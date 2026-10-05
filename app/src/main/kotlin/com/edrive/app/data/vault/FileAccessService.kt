@@ -1,5 +1,8 @@
 package com.edrive.app.data.vault
 
+import javax.inject.Inject
+import javax.inject.Singleton
+import dagger.hilt.android.qualifiers.ApplicationContext
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.BitmapFactory
@@ -31,8 +34,9 @@ import java.io.OutputStream
  * Artıq vault-da olan fayllarla iş: siyahı, miniatür, baxış (yaddaşda deşifrə),
  * kənar tətbiqdə açma, cihaza endirmə və silmə.
  */
-class FileAccessService(
-    private val context: Context,
+@Singleton
+class FileAccessService @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val session: Session,
     private val users: UserDao,
     private val files: FileDao,

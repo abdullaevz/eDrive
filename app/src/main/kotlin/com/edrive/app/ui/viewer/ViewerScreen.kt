@@ -66,11 +66,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.SavedStateHandle
+import com.edrive.app.data.Session
+import com.edrive.app.data.vault.FileAccessService
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
-import com.edrive.app.AppContainer
 import com.edrive.app.data.db.entity.FileEntity
 import com.edrive.app.data.db.entity.FileStatus
 import com.edrive.app.ui.components.PrimaryButton
@@ -97,8 +98,17 @@ data class ViewerUi(
     val error: String? = null,
 )
 
-class ViewerViewModel(private val c: AppContainer, val id: String) : ViewModel() {
-    val file: StateFlow<FileEntity?> = c.fileAccess.observeFile(id).stateIn(viewModelScope, SharingStarted.Eagerly, null)
+@HiltViewModel
+class ViewerViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
+    private val fileAccess: FileAccessService,
+    private val session: Session,
+) : ViewModel() {
+    val id: String = checkNotNull(savedStateHandle["id"])
+    fun beginExternalUi() = session.beginExternalUi()
+    fun endExternalUi() = session.endExternalUi()
+
+    val file: StateFlow<FileEntity?> = fileAccess.observeFile(id).stateIn(viewModelScope, SharingStarted.Eagerly, null)
     val ui = MutableStateFlow(ViewerUi())
     private val _open = Channel<Uri>(Channel.BUFFERED)
     val openEvents = _open.receiveAsFlow()
@@ -106,10 +116,10 @@ class ViewerViewModel(private val c: AppContainer, val id: String) : ViewModel()
     val messages = Channel<String>(Channel.BUFFERED)
 
     /** Şəkil/video → qalereya (Android 10+). */
-    fun saveToGallery() = export { c.fileAccess.exportToGallery(id) { p -> ui.value = ui.value.copy(progress = p) }.let { "Qalereyaya saxlanıldı: $it" } }
+    fun saveToGallery() = export { fileAccess.exportToGallery(id) { p -> ui.value = ui.value.copy(progress = p) }.let { "Qalereyaya saxlanıldı: $it" } }
 
     /** İstənilən fayl → istifadəçinin seçdiyi yer. */
-    fun saveTo(uri: Uri) = export { c.fileAccess.exportTo(id, uri) { p -> ui.value = ui.value.copy(progress = p) }; "Fayl cihaza saxlanıldı" }
+    fun saveTo(uri: Uri) = export { fileAccess.exportTo(id, uri) { p -> ui.value = ui.value.copy(progress = p) }; "Fayl cihaza saxlanıldı" }
 
     private fun export(block: suspend () -> String) {
         if (ui.value.exporting) return
@@ -130,7 +140,7 @@ class ViewerViewModel(private val c: AppContainer, val id: String) : ViewModel()
         viewModelScope.launch {
             ui.value = ViewerUi(loading = true)
             try {
-                val bytes = c.fileAccess.decryptToMemory(id) { p -> ui.value = ui.value.copy(progress = p) }
+                val bytes = fileAccess.decryptToMemory(id) { p -> ui.value = ui.value.copy(progress = p) }
                 val bmp = withContext(Dispatchers.Default) { Media.decodeFull(bytes) }
                 bytes.fill(0)
                 ui.value = if (bmp != null) ViewerUi(bitmap = bmp) else ViewerUi(error = "Şəkil formatı dəstəklənmir — kənar tətbiqdə açın")
@@ -144,7 +154,7 @@ class ViewerViewModel(private val c: AppContainer, val id: String) : ViewModel()
         viewModelScope.launch {
             ui.value = ui.value.copy(loading = true, error = null)
             try {
-                val uri = c.fileAccess.openExternally(id) { p -> ui.value = ui.value.copy(progress = p) }
+                val uri = fileAccess.openExternally(id) { p -> ui.value = ui.value.copy(progress = p) }
                 _open.send(uri)
             } catch (e: Exception) {
                 ui.value = ui.value.copy(error = e.message ?: "Açılmadı")
@@ -157,7 +167,7 @@ class ViewerViewModel(private val c: AppContainer, val id: String) : ViewModel()
     fun delete() {
         viewModelScope.launch {
             try {
-                c.fileAccess.delete(id)
+                fileAccess.delete(id)
                 closeEvents.send(Unit)
             } catch (e: Exception) {
                 ui.value = ui.value.copy(error = "Silinmədi: ${e.message}")
@@ -167,8 +177,7 @@ class ViewerViewModel(private val c: AppContainer, val id: String) : ViewModel()
 }
 
 @Composable
-fun ViewerRoute(container: AppContainer, id: String, onBack: () -> Unit) {
-    val vm: ViewerViewModel = viewModel(key = id, factory = viewModelFactory { initializer { ViewerViewModel(container, id) } })
+fun ViewerRoute(vm: ViewerViewModel, onBack: () -> Unit) {
     val file by vm.file.collectAsState()
     val ui by vm.ui.collectAsState()
     val context = LocalContext.current
@@ -177,7 +186,7 @@ fun ViewerRoute(container: AppContainer, id: String, onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
 
     val saveAs = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(file?.mimeType ?: "*/*")) { uri ->
-        container.session.endExternalUi()
+        vm.endExternalUi()
         if (uri != null) vm.saveTo(uri)
     }
     val isMedia = file?.let { it.mimeType.startsWith("image/") || it.mimeType.startsWith("video/") } == true
@@ -187,11 +196,11 @@ fun ViewerRoute(container: AppContainer, id: String, onBack: () -> Unit) {
     LaunchedEffect(file?.id, isImage) { if (isImage) vm.loadImage() }
     LaunchedEffect(Unit) {
         vm.openEvents.collect { uri ->
-            container.session.beginExternalUi()
+            vm.beginExternalUi()
             val type = file?.mimeType ?: "*/*"
             val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             runCatching { context.startActivity(Intent.createChooser(intent, "Aç")) }
-            container.session.endExternalUi()
+            vm.endExternalUi()
         }
     }
     LaunchedEffect(Unit) { for (u in vm.closeEvents) onBack() }
@@ -224,7 +233,7 @@ fun ViewerRoute(container: AppContainer, id: String, onBack: () -> Unit) {
                     confirmDownload = false
                     if (toGallery) vm.saveToGallery()
                     else {
-                        container.session.beginExternalUi()
+                        vm.beginExternalUi()
                         saveAs.launch(file?.name ?: "eDrive-fayl")
                     }
                 }) { Text("Endir", color = EColors.Accent) }

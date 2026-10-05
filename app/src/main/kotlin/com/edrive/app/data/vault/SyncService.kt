@@ -1,5 +1,7 @@
 package com.edrive.app.data.vault
 
+import javax.inject.Inject
+import javax.inject.Singleton
 import com.edrive.app.data.Session
 import com.edrive.app.data.db.dao.FileDao
 import com.edrive.app.data.db.dao.UserDao
@@ -19,7 +21,8 @@ import java.util.Base64
  *  - Drive-da olub telefonda olmayanlar əlavə olunur (yeni telefon, başqa cihazdan yüklənənlər);
  *  - telefonda "Drive-da" kimi qeyd olunub Drive-da olmayanlar silinir (başqa cihazdan silinənlər).
  */
-class SyncService(
+@Singleton
+class SyncService @Inject constructor(
     private val session: Session,
     private val users: UserDao,
     private val files: FileDao,

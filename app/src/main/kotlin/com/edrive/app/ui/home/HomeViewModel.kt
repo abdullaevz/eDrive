@@ -6,8 +6,20 @@ import android.net.Uri
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
+import com.edrive.app.data.AccountRepository
+import com.edrive.app.data.Session
+import com.edrive.app.data.db.dao.UserDao
+import com.edrive.app.data.vault.DriveConnectionService
+import com.edrive.app.data.vault.FileAccessService
+import com.edrive.app.data.vault.ImportService
+import com.edrive.app.data.vault.SyncService
+import com.edrive.app.data.vault.UploadScheduler
+import com.edrive.app.data.vault.UploadService
+import com.edrive.app.drive.DriveAuthorizer
+import com.edrive.app.security.BiometricKeyStore
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import androidx.lifecycle.viewModelScope
-import com.edrive.app.AppContainer
 import com.edrive.app.data.vault.DriveConnectionService.ConnectOutcome
 import com.edrive.app.drive.DriveConsentRequired
 import com.edrive.app.data.db.entity.FileEntity
@@ -42,10 +54,30 @@ data class HomeUi(
     val remotePasswordError: String? = null,
 )
 
-class HomeViewModel(private val c: AppContainer, val userId: Long, val username: String) : ViewModel() {
+@HiltViewModel
+class HomeViewModel @Inject constructor(
+    private val accounts: AccountRepository,
+    private val biometric: BiometricKeyStore,
+    private val connection: DriveConnectionService,
+    private val driveAuth: DriveAuthorizer,
+    private val fileAccess: FileAccessService,
+    private val importer: ImportService,
+    private val session: Session,
+    private val sync: SyncService,
+    private val uploadScheduler: UploadScheduler,
+    private val uploads: UploadService,
+    private val userDao: UserDao,
+) : ViewModel() {
+    private val unlocked = checkNotNull(session.state.value) { "Home yalnız açıq sessiyada yaradılır" }
+    val userId: Long = unlocked.userId
+    val username: String = unlocked.username
 
-    val user: StateFlow<UserEntity?> = c.accounts.observeUser(userId).stateIn(viewModelScope, SharingStarted.Eagerly, null)
-    val files: StateFlow<List<FileEntity>?> = c.fileAccess.observeFiles(userId).stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    fun beginExternalUi() = session.beginExternalUi()
+    fun endExternalUi() = session.endExternalUi()
+
+
+    val user: StateFlow<UserEntity?> = accounts.observeUser(userId).stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val files: StateFlow<List<FileEntity>?> = fileAccess.observeFiles(userId).stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _ui = MutableStateFlow(HomeUi())
     val ui: StateFlow<HomeUi> = _ui.asStateFlow()
@@ -53,37 +85,37 @@ class HomeViewModel(private val c: AppContainer, val userId: Long, val username:
     private val _events = Channel<HomeEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
 
-    val biometricAvailable: Boolean get() = c.biometric.isAvailable()
+    val biometricAvailable: Boolean get() = biometric.isAvailable()
 
     init {
         // Açılışda Drive ilə sinxronlaşma (başqa cihazdan əlavə/silinən fayllar) və yarımçıq yükləmələr
         viewModelScope.launch {
-            if (c.db.users().byId(userId)?.driveUserFolderId != null) {
+            if (userDao.byId(userId)?.driveUserFolderId != null) {
                 sync(quiet = true)
-                c.uploadScheduler.schedule()
+                uploadScheduler.schedule()
             }
         }
     }
 
-    suspend fun thumbnail(id: String): ImageBitmap? = c.fileAccess.thumbnail(userId, id)
+    suspend fun thumbnail(id: String): ImageBitmap? = fileAccess.thumbnail(userId, id)
 
     /** Hər qoşulmada hesab seçmə pəncərəsi açılır (Google əvvəlki hesabı avtomatik seçməsin deyə). */
     fun connectDrive() {
         if (_ui.value.driveBusy) return
         viewModelScope.launch {
-            c.session.beginExternalUi()
+            session.beginExternalUi()
             _events.send(HomeEvent.PickAccount)
         }
     }
 
     fun onAccountPicked(email: String?) {
         if (email.isNullOrBlank()) return
-        driveOp { handle(c.connection.startConnect(email)) }
+        driveOp { handle(connection.startConnect(email)) }
     }
 
     fun onConsentResult(data: Intent?) = driveOp {
-        val token = c.driveAuth.tokenFromConsentResult(data)
-        handle(c.connection.finishConnect(token))
+        val token = driveAuth.tokenFromConsentResult(data)
+        handle(connection.finishConnect(token))
     }
 
     fun submitRemotePassword(password: String) {
@@ -91,7 +123,7 @@ class HomeViewModel(private val c: AppContainer, val userId: Long, val username:
         viewModelScope.launch {
             _ui.update { it.copy(driveBusy = true, remotePasswordError = null) }
             try {
-                val r = c.connection.adoptRemote(remote, password.toCharArray())
+                val r = connection.adoptRemote(remote, password.toCharArray())
                 _ui.update { it.copy(remoteVault = null) }
                 handle(r)
             } catch (e: Exception) {
@@ -104,7 +136,7 @@ class HomeViewModel(private val c: AppContainer, val userId: Long, val username:
 
     fun cancelRemotePassword() {
         viewModelScope.launch {
-            c.connection.disconnect()
+            connection.disconnect()
             _ui.update { it.copy(remoteVault = null, remotePasswordError = null) }
         }
     }
@@ -119,7 +151,7 @@ class HomeViewModel(private val c: AppContainer, val userId: Long, val username:
     }
 
     fun disconnectDrive() = driveOp {
-        c.connection.disconnect()
+        connection.disconnect()
         message("Google Drive ayrıldı. Fayllar Drive-da şifrəli qalır.")
     }
 
@@ -127,7 +159,7 @@ class HomeViewModel(private val c: AppContainer, val userId: Long, val username:
         viewModelScope.launch {
             _ui.update { it.copy(syncing = true) }
             try {
-                val n = c.sync.sync()
+                val n = sync.sync()
                 if (!quiet) message(if (n > 0) "$n yeni fayl tapıldı" else "Hər şey sinxrondur")
             } catch (e: DriveConsentRequired) {
                 if (!quiet) _events.send(HomeEvent.LaunchConsent(e.pendingIntent))
@@ -144,7 +176,7 @@ class HomeViewModel(private val c: AppContainer, val userId: Long, val username:
         viewModelScope.launch {
             _ui.update { it.copy(importing = true) }
             try {
-                c.importer.import(uris)
+                importer.import(uris)
                 message("${uris.size} fayl şifrələndi · Drive-a yüklənir")
             } catch (e: Exception) {
                 message(friendly(e))
@@ -154,11 +186,11 @@ class HomeViewModel(private val c: AppContainer, val userId: Long, val username:
         }
     }
 
-    fun retry(id: String) = viewModelScope.launch { c.uploads.retry(id) }
+    fun retry(id: String) = viewModelScope.launch { uploads.retry(id) }
 
     fun enableBiometric(activity: FragmentActivity) = viewModelScope.launch {
         try {
-            c.accounts.enableBiometric(activity)
+            accounts.enableBiometric(activity)
             message("Barmaq izi ilə giriş aktivləşdirildi")
         } catch (e: Exception) {
             message(e.message ?: "Alınmadı")
@@ -166,11 +198,11 @@ class HomeViewModel(private val c: AppContainer, val userId: Long, val username:
     }
 
     fun disableBiometric() = viewModelScope.launch {
-        c.accounts.disableBiometric()
+        accounts.disableBiometric()
         message("Barmaq izi ilə giriş söndürüldü")
     }
 
-    fun lock() = c.session.lock()
+    fun lock() = session.lock()
 
     private fun driveOp(block: suspend () -> Unit) {
         if (_ui.value.driveBusy) return
@@ -179,7 +211,7 @@ class HomeViewModel(private val c: AppContainer, val userId: Long, val username:
             try {
                 block()
             } catch (e: DriveConsentRequired) {
-                c.session.beginExternalUi()
+                session.beginExternalUi()
                 _events.send(HomeEvent.LaunchConsent(e.pendingIntent))
             } catch (e: Exception) {
                 message(friendly(e))

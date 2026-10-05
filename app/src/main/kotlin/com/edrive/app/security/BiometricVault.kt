@@ -1,5 +1,8 @@
 package com.edrive.app.security
 
+import javax.inject.Inject
+import javax.inject.Singleton
+import dagger.hilt.android.qualifiers.ApplicationContext
 import android.content.Context
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
@@ -38,7 +41,8 @@ interface BiometricKeyStore {
  * Bu açar çipdən heç vaxt çıxmır və yalnız uğurlu biometrik təsdiqdən dərhal sonra işləyir.
  * Yeni barmaq izi əlavə olunsa, açar avtomatik etibarsız olur → yenidən parolla daxil olmaq lazımdır.
  */
-class BiometricVault(private val context: Context) : BiometricKeyStore {
+@Singleton
+class BiometricVault @Inject constructor(@ApplicationContext private val context: Context) : BiometricKeyStore {
 
     override fun isAvailable(): Boolean =
         BiometricManager.from(context).canAuthenticate(BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS

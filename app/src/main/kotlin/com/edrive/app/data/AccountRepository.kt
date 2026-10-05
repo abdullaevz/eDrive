@@ -1,5 +1,7 @@
 package com.edrive.app.data
 
+import javax.inject.Inject
+import javax.inject.Singleton
 import androidx.fragment.app.FragmentActivity
 import com.edrive.app.data.db.dao.UserDao
 import com.edrive.app.data.db.entity.UserEntity
@@ -17,7 +19,8 @@ import java.time.Instant
 class AccountException(message: String) : Exception(message)
 
 /** Lokal hesablar: qeydiyyat, parol və ya barmaq izi ilə giriş. */
-class AccountRepository(
+@Singleton
+class AccountRepository @Inject constructor(
     private val users: UserDao,
     kdf: PasswordKdf,
     private val session: Session,

@@ -1,5 +1,7 @@
 package com.edrive.app.data.vault
 
+import javax.inject.Inject
+import javax.inject.Singleton
 import com.edrive.app.data.AccountRepository
 import com.edrive.app.data.Session
 import com.edrive.app.data.db.dao.FileDao
@@ -21,7 +23,8 @@ import kotlinx.coroutines.withContext
  *     parol ilə təsdiq tələb olunur (yeni telefonda bərpa ssenarisi);
  *  3. fayl siyahısı sinxronlaşdırılır və gözləyən yükləmələr başladılır.
  */
-class DriveConnectionService(
+@Singleton
+class DriveConnectionService @Inject constructor(
     private val session: Session,
     private val users: UserDao,
     private val files: FileDao,

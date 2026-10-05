@@ -33,6 +33,7 @@ class FakeDrive(private val email: String = "natiq@gmail.com") : DriveClient, Dr
     // DriveAuthorizer
     override suspend fun authorize(email: String?) = AuthResult.Token("fake-token")
     override suspend fun revoke(token: String) { revoked += token }
+    override fun tokenFromConsentResult(data: android.content.Intent?) = "fake-token"
     override suspend fun forgetAccount(email: String) { forgotten += email }
 
     // DriveClient

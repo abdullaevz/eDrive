@@ -1,5 +1,8 @@
 package com.edrive.app.data.vault
 
+import javax.inject.Inject
+import javax.inject.Singleton
+import dagger.hilt.android.qualifiers.ApplicationContext
 import android.content.Context
 import android.net.Uri
 import com.edrive.app.data.Session
@@ -26,8 +29,9 @@ import java.util.UUID
  * ```
  * Şifrələmə dərhal olur, Drive-a yükləməni isə [UploadScheduler] arxa fonda başladır.
  */
-class ImportService(
-    private val context: Context,
+@Singleton
+class ImportService @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val session: Session,
     private val files: FileDao,
     private val store: LocalVaultStore,

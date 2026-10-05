@@ -1,5 +1,6 @@
 package com.edrive.app.drive
 
+import android.content.Intent
 import android.app.PendingIntent
 import kotlinx.serialization.Serializable
 import java.io.File
@@ -44,6 +45,9 @@ interface DriveClientProvider {
 interface DriveAuthorizer {
     suspend fun authorize(email: String?): AuthResult
     suspend fun revoke(token: String)
+
+    /** Google icazə pəncərəsinin nəticəsindən access token çıxarır. */
+    fun tokenFromConsentResult(data: Intent?): String
 
     /** Google Play Services-in bu hesab üçün yadda saxladığı icazəni silir (hesab seçimi yenidən soruşulsun deyə). */
     suspend fun forgetAccount(email: String) {}

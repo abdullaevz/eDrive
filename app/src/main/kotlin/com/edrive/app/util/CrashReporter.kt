@@ -1,5 +1,8 @@
 package com.edrive.app.util
 
+import javax.inject.Inject
+import javax.inject.Singleton
+import dagger.hilt.android.qualifiers.ApplicationContext
 import android.content.Context
 import android.os.Build
 import android.util.Log
@@ -45,7 +48,8 @@ object AppLog {
  * Gözlənilməz çökmələri tutur: hesabatı diskə yazır, növbəti açılışda istifadəçiyə göstərilir.
  * Hesabatda yalnız texniki məlumat var (xəta izi, cihaz, versiya) — şəxsi məlumat yoxdur.
  */
-class CrashReporter(private val context: Context) {
+@Singleton
+class CrashReporter @Inject constructor(@ApplicationContext private val context: Context) {
 
     private val dir get() = File(context.filesDir, "crashes").apply { mkdirs() }
 

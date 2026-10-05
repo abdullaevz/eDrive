@@ -1,5 +1,7 @@
 package com.edrive.app.data.vault
 
+import javax.inject.Inject
+import javax.inject.Singleton
 import com.edrive.app.data.db.dao.FileDao
 import com.edrive.app.data.db.dao.UserDao
 import com.edrive.app.data.db.entity.FileStatus
@@ -17,7 +19,8 @@ import java.io.IOException
  * Yükləmə növbəsini Drive-a ötürür. DEK TƏLƏB ETMİR — outbox-dakı fayllar artıq şifrəlidir,
  * ona görə vault kilidli olsa belə (və ya tətbiq bağlı olsa belə, WorkManager vasitəsilə) işləyir.
  */
-class UploadService(
+@Singleton
+class UploadService @Inject constructor(
     private val users: UserDao,
     private val files: FileDao,
     private val store: LocalVaultStore,

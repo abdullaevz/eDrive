@@ -4,8 +4,10 @@ import android.content.Context
 import android.net.Uri
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import com.edrive.app.data.Session
 import androidx.lifecycle.viewModelScope
-import com.edrive.app.AppContainer
 import com.edrive.app.data.AccountException
 import com.edrive.app.data.AccountRepository
 import com.edrive.app.security.BiometricKeyStore
@@ -38,17 +40,25 @@ data class AuthState(
     val enableBiometricAfter: Boolean = false,
 )
 
-class AuthViewModel(private val c: AppContainer) : ViewModel() {
+@HiltViewModel
+class AuthViewModel @Inject constructor(
+    private val accounts: AccountRepository,
+    private val biometric: BiometricKeyStore,
+    private val session: Session,
+) : ViewModel() {
+    fun beginExternalUi() = session.beginExternalUi()
+    fun endExternalUi() = session.endExternalUi()
+
 
     private val _state = MutableStateFlow(AuthState())
     val state: StateFlow<AuthState> = _state.asStateFlow()
 
     /** null = hələ yüklənir (DB-dən). */
-    val users: StateFlow<List<KnownUser>?> = c.accounts.observeUsers()
+    val users: StateFlow<List<KnownUser>?> = accounts.observeUsers()
         .map { list -> list.map { KnownUser(it.id, it.username, it.bioWrappedDek != null) } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    val biometricAvailable: Boolean get() = c.biometric.isAvailable()
+    val biometricAvailable: Boolean get() = biometric.isAvailable()
 
     private var pending: AccountRepository.PendingAccount? = null
     private var autoPrompted = false
@@ -61,14 +71,14 @@ class AuthViewModel(private val c: AppContainer) : ViewModel() {
 
     fun login() = launchBusy {
         val s = _state.value
-        c.accounts.login(s.username, s.password.toCharArray())
+        accounts.login(s.username, s.password.toCharArray())
         _state.update { it.copy(password = "") }
     }
 
     fun register() = launchBusy {
         val s = _state.value
         if (s.password != s.confirm) throw AccountException("Parollar uyğun gəlmir")
-        pending = c.accounts.register(s.username, s.password.toCharArray())
+        pending = accounts.register(s.username, s.password.toCharArray())
         _state.update { it.copy(mode = AuthMode.RECOVERY, enableBiometricAfter = biometricAvailable) }
     }
 
@@ -89,15 +99,15 @@ class AuthViewModel(private val c: AppContainer) : ViewModel() {
     fun finishRegistration(activity: FragmentActivity) = launchBusy {
         val p = pending ?: return@launchBusy
         val wantBio = _state.value.enableBiometricAfter
-        c.accounts.activate(p)
+        accounts.activate(p)
         pending = null
         _state.value = AuthState(username = p.username)
-        if (wantBio) runCatching { c.accounts.enableBiometric(activity) }
+        if (wantBio) runCatching { accounts.enableBiometric(activity) }
     }
 
     fun biometricLogin(activity: FragmentActivity, userId: Long) = launchBusy {
         try {
-            c.accounts.loginWithBiometric(activity, userId)
+            accounts.loginWithBiometric(activity, userId)
         } catch (e: BiometricKeyStore.BiometricCancelled) {
             // istifadəçi "Parol ilə" seçdi — səssizcə keçirik
         }

@@ -1,5 +1,8 @@
 package com.edrive.app.drive
 
+import javax.inject.Inject
+import javax.inject.Singleton
+import dagger.hilt.android.qualifiers.ApplicationContext
 import android.accounts.Account
 import android.content.Context
 import android.content.Intent
@@ -26,7 +29,8 @@ import kotlin.coroutines.resumeWithException
  * digər Drive fayllarına çıxışı yoxdur. Bu, həm təhlükəsizlik, həm də Google-un yoxlama
  * tələbləri baxımından ən düzgün seçimdir ("restricted" scope deyil).
  */
-class DriveAuth(private val context: Context, private val http: OkHttpClient) : DriveAuthorizer {
+@Singleton
+class DriveAuth @Inject constructor(@ApplicationContext private val context: Context, private val http: OkHttpClient) : DriveAuthorizer {
 
     private val client get() = Identity.getAuthorizationClient(context)
 
@@ -41,7 +45,7 @@ class DriveAuth(private val context: Context, private val http: OkHttpClient) : 
         else AuthResult.Token(r.accessToken ?: error("Access token alınmadı"))
     }
 
-    fun tokenFromConsentResult(data: Intent?): String {
+    override fun tokenFromConsentResult(data: Intent?): String {
         val r = client.getAuthorizationResultFromIntent(data)
         return r.accessToken ?: error("Access token alınmadı")
     }

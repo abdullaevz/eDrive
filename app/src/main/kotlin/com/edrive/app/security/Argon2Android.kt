@@ -1,5 +1,6 @@
 package com.edrive.app.security
 
+import javax.inject.Inject
 import com.edrive.crypto.KdfParams
 import com.edrive.crypto.PasswordKdf
 import com.edrive.crypto.wipe
@@ -13,7 +14,7 @@ import java.nio.CharBuffer
  * Argon2id — native (C) implementasiya. Saf Java versiyasından telefonda bir neçə dəfə sürətlidir.
  * Nəticə standartdır: Spring Boot (BouncyCastle) ilə eyni parol+salt eyni açarı verir.
  */
-class Argon2Android : PasswordKdf {
+class Argon2Android @Inject constructor() : PasswordKdf {
     private val argon2 = Argon2Kt()
 
     override fun deriveKey(password: CharArray, salt: ByteArray, params: KdfParams): ByteArray {

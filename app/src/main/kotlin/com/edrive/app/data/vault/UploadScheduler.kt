@@ -1,5 +1,8 @@
 package com.edrive.app.data.vault
 
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 import android.content.Context
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
@@ -16,7 +19,10 @@ fun interface UploadScheduler {
 }
 
 /** WorkManager: internet olanda işləyir, tətbiq bağlansa belə davam edir, xəta olarsa eksponensial gecikmə ilə təkrarlayır. */
-class WorkManagerUploadScheduler(private val context: Context) : UploadScheduler {
+@Singleton
+class WorkManagerUploadScheduler @Inject constructor(
+    @ApplicationContext private val context: Context,
+) : UploadScheduler {
     override fun schedule() {
         val req = OneTimeWorkRequestBuilder<UploadWorker>()
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())

@@ -1,5 +1,7 @@
 package com.edrive.app.drive
 
+import javax.inject.Inject
+import javax.inject.Singleton
 import okhttp3.OkHttpClient
 import java.util.concurrent.ConcurrentHashMap
 
@@ -7,7 +9,8 @@ import java.util.concurrent.ConcurrentHashMap
  * Hər Google hesabı üçün [GoogleDriveClient] yaradır və access token-ləri keşləyir.
  * Token vaxtı keçəndə (401) keşdən silinib yenisi alınır; icazə lazım olarsa [DriveConsentRequired] atılır.
  */
-class GoogleDriveClientProvider(
+@Singleton
+class GoogleDriveClientProvider @Inject constructor(
     private val http: OkHttpClient,
     private val auth: DriveAuth,
 ) : DriveClientProvider {

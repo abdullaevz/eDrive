@@ -1,5 +1,8 @@
 package com.edrive.app.data.vault
 
+import javax.inject.Inject
+import javax.inject.Singleton
+import dagger.hilt.android.qualifiers.ApplicationContext
 import android.content.Context
 import com.edrive.app.data.db.dao.FileDao
 import com.edrive.app.data.db.entity.FileEntity
@@ -19,8 +22,9 @@ import java.io.File
  *  cache/open/                             kənar tətbiqdə açmaq üçün müvəqqəti deşifrə (kilid zamanı silinir)
  * ```
  */
-class LocalVaultStore(
-    private val context: Context,
+@Singleton
+class LocalVaultStore @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val files: FileDao,
     private val thumbCache: ThumbnailCache,
 ) {

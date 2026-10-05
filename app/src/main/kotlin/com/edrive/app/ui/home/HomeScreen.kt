@@ -88,7 +88,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.edrive.app.AppContainer
 import com.edrive.app.drive.DriveLayout
 import com.edrive.app.data.db.entity.FileEntity
 import com.edrive.app.data.db.entity.FileStatus
@@ -104,7 +103,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeRoute(container: AppContainer, vm: HomeViewModel, onOpen: (String) -> Unit) {
+fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onOpen: (String) -> Unit) {
     val user by vm.user.collectAsState()
     val files by vm.files.collectAsState()
     val ui by vm.ui.collectAsState()
@@ -116,28 +115,28 @@ fun HomeRoute(container: AppContainer, vm: HomeViewModel, onOpen: (String) -> Un
     var showPicker by remember { mutableStateOf(false) }
 
     val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
-        container.session.endExternalUi()
+        vm.endExternalUi()
         if (r.resultCode == android.app.Activity.RESULT_OK) vm.onConsentResult(r.data)
     }
     val pickAccount = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-        container.session.endExternalUi()
+        vm.endExternalUi()
         if (r.resultCode == android.app.Activity.RESULT_OK) {
             vm.onAccountPicked(r.data?.getStringExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME))
         }
     }
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris ->
-        container.session.endExternalUi()
+        vm.endExternalUi()
         vm.import(uris)
     }
     val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        container.session.endExternalUi()
+        vm.endExternalUi()
         vm.import(uris)
     }
     val saveLog = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
-        container.session.endExternalUi()
+        vm.endExternalUi()
         if (uri != null) scope.launch {
             val ok = runCatching {
-                val text = (context.applicationContext as com.edrive.app.EDriveApp).crashReporter.diagnostics()
+                val text = diagnostics()
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     context.contentResolver.openOutputStream(uri)!!.use { it.write(text.toByteArray()) }
                 }
@@ -187,12 +186,12 @@ fun HomeRoute(container: AppContainer, vm: HomeViewModel, onOpen: (String) -> Un
             UploadChooser(
                 onMedia = {
                     showPicker = false
-                    container.session.beginExternalUi()
+                    vm.beginExternalUi()
                     pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
                 },
                 onFiles = {
                     showPicker = false
-                    container.session.beginExternalUi()
+                    vm.beginExternalUi()
                     pickFiles.launch(arrayOf("*/*"))
                 },
             )
@@ -214,7 +213,7 @@ fun HomeRoute(container: AppContainer, vm: HomeViewModel, onOpen: (String) -> Un
                 onBiometric = { on -> if (on) vm.enableBiometric(activity) else vm.disableBiometric() },
                 onLock = { showAccount = false; vm.lock() },
                 onExportLog = {
-                    container.session.beginExternalUi()
+                    vm.beginExternalUi()
                     saveLog.launch("eDrive-diaqnostika-${java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US).format(java.util.Date())}.txt")
                 },
             )

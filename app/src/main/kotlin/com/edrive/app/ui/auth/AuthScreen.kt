@@ -59,10 +59,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
-import com.edrive.app.AppContainer
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.edrive.app.data.AccountRepository
 import com.edrive.app.ui.components.Chip
 import com.edrive.app.ui.components.EField
@@ -72,8 +69,7 @@ import com.edrive.app.ui.findActivity
 import com.edrive.app.ui.theme.EColors
 
 @Composable
-fun AuthRoute(container: AppContainer) {
-    val vm: AuthViewModel = viewModel(factory = viewModelFactory { initializer { AuthViewModel(container) } })
+fun AuthRoute(vm: AuthViewModel = hiltViewModel()) {
     val state by vm.state.collectAsState()
     val loadedUsers by vm.users.collectAsState()
     val context = LocalContext.current
@@ -90,7 +86,7 @@ fun AuthRoute(container: AppContainer) {
     }
 
     val createPdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
-        container.session.endExternalUi()
+        vm.endExternalUi()
         if (uri != null) vm.saveRecovery(context, uri)
     }
 
@@ -110,7 +106,7 @@ fun AuthRoute(container: AppContainer) {
         onRegister = vm::register,
         onBiometric = { selected?.let { vm.biometricLogin(activity, it.id) } },
         onSaveRecovery = {
-            container.session.beginExternalUi()
+            vm.beginExternalUi()
             createPdf.launch("eDrive-${state.username}-berpa.pdf")
         },
         onToggleBiometric = vm::setEnableBiometric,

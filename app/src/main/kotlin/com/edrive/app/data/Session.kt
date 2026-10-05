@@ -1,5 +1,7 @@
 package com.edrive.app.data
 
+import javax.inject.Inject
+import javax.inject.Singleton
 import com.edrive.crypto.wipe
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -10,7 +12,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * Açıq vault-un vəziyyəti. DEK yalnız burada, yalnız RAM-da saxlanılır.
  * Kilidlənəndə massiv sıfırlanır.
  */
-class Session {
+@Singleton
+class Session @Inject constructor() {
 
     data class Unlocked(val userId: Long, val username: String, internal val dek: ByteArray)
 
