@@ -2,7 +2,7 @@
 
 Kotlin + Jetpack Compose. Fayllar telefonda **AES-256-GCM** ilə şifrələnir və istifadəçinin öz Google Drive-ındakı **eDrive Storage** qovluğuna yalnız şifrəli halda yüklənir.
 
-Məxfilik siyasəti: [PRIVACY.md](PRIVACY.md). Tərtibatçı heç bir məlumat toplamır.
+Məxfilik siyasəti: [PRIVACY.md](PRIVACY.md) · İstifadə şərtləri: [TERMS.md](TERMS.md). Tərtibatçı heç bir məlumat toplamır.
 
 ## Yüklə
 
