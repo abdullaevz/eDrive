@@ -1,0 +1,22 @@
+# Gradle / build
+.gradle/
+build/
+.kotlin/
+captures/
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Lokal və gizli fayllar — heç vaxt commit edilmir
+/local.properties
+keystore.properties
+*.jks
+release.keystore
+release*.keystore
+
+# APK-lar GitHub Releases-ə yüklənir, repoya yox
+*.apk
+*.aab
+_to_delete/
