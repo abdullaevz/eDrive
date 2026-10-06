@@ -79,6 +79,7 @@ import com.edrive.app.ui.home.typeIcon
 import com.edrive.app.ui.theme.EColors
 import com.edrive.app.util.Media
 import com.edrive.app.util.formatBytes
+import com.edrive.crypto.RandomAccessDecryptor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -114,6 +115,42 @@ class ViewerViewModel @Inject constructor(
     val openEvents = _open.receiveAsFlow()
     val closeEvents = Channel<Unit>(Channel.BUFFERED)
     val messages = Channel<String>(Channel.BUFFERED)
+
+    /**
+     * Video: açılmış deşifrə oxuyucusu. Ekran çevriləndə yenidən endirməmək üçün ViewModel-də saxlanılır;
+     * vault kilidlənəndə və ya ekran bağlananda bağlanır (açar sıfırlanır).
+     */
+    val videoSource = MutableStateFlow<RandomAccessDecryptor?>(null)
+    var videoPositionMs: Long = 0L
+    var videoPlayWhenReady: Boolean = true
+    private val lockListener: () -> Unit = { closeVideo() }
+
+    init { session.addLockListener(lockListener) }
+
+    override fun onCleared() {
+        session.removeLockListener(lockListener)
+        closeVideo()
+    }
+
+    private fun closeVideo() {
+        videoSource.value?.close()
+        videoSource.value = null
+    }
+
+    /** Videonun şifrəli nüsxəsini hazırlayır (lazım olsa Drive-dan endirir) və oxuyucunu açır. */
+    fun prepareVideo() {
+        if (videoSource.value != null || ui.value.loading) return
+        viewModelScope.launch {
+            ui.value = ViewerUi(loading = true)
+            try {
+                val d = fileAccess.openRandomAccess(id) { p -> ui.value = ui.value.copy(progress = p) }
+                videoSource.value = d
+                ui.value = ViewerUi()
+            } catch (e: Exception) {
+                ui.value = ViewerUi(error = e.message ?: "Video hazırlanmadı")
+            }
+        }
+    }
 
     /** Şəkil/video → qalereya (Android 10+). */
     fun saveToGallery() = export { fileAccess.exportToGallery(id) { p -> ui.value = ui.value.copy(progress = p) }.let { "Qalereyaya saxlanıldı: $it" } }
@@ -194,6 +231,10 @@ fun ViewerRoute(vm: ViewerViewModel, onBack: () -> Unit) {
 
     val isImage = file?.let { it.mimeType.startsWith("image/") } == true
     LaunchedEffect(file?.id, isImage) { if (isImage) vm.loadImage() }
+    val isVideo = file?.let { it.mimeType.startsWith("video/") } == true
+    val videoReady = file?.let { it.status == FileStatus.SYNCED || it.status == FileStatus.PENDING } == true
+    val videoSource by vm.videoSource.collectAsState()
+    LaunchedEffect(file?.id, isVideo, videoReady) { if (isVideo && videoReady) vm.prepareVideo() }
     LaunchedEffect(Unit) {
         vm.openEvents.collect { uri ->
             vm.beginExternalUi()
@@ -211,6 +252,12 @@ fun ViewerRoute(vm: ViewerViewModel, onBack: () -> Unit) {
         onOpenExternal = vm::openExternally,
         onDownload = { confirmDownload = true },
         snackbar = snackbar,
+        isVideo = isVideo,
+        videoSource = videoSource,
+        videoStartMs = vm.videoPositionMs,
+        videoStartPlaying = vm.videoPlayWhenReady,
+        onVideoState = { pos, playing -> vm.videoPositionMs = pos; vm.videoPlayWhenReady = playing },
+        onRetryVideo = vm::prepareVideo,
     )
 
     if (confirmDownload) {
@@ -264,15 +311,32 @@ fun ViewerContent(
     onOpenExternal: () -> Unit,
     onDownload: () -> Unit = {},
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
+    isVideo: Boolean = false,
+    videoSource: RandomAccessDecryptor? = null,
+    videoStartMs: Long = 0L,
+    videoStartPlaying: Boolean = true,
+    onVideoState: (positionMs: Long, playWhenReady: Boolean) -> Unit = { _, _ -> },
+    onRetryVideo: () -> Unit = {},
 ) {
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val bmp = ui.bitmap
+        val videoReady = isVideo && file != null && (file.status == FileStatus.SYNCED || file.status == FileStatus.PENDING)
         if (bmp != null) {
             ZoomableImage(bmp)
+        } else if (videoReady) {
+            if (videoSource != null) {
+                EncryptedVideoPlayer(
+                    source = videoSource,
+                    startPositionMs = videoStartMs,
+                    startPlayWhenReady = videoStartPlaying,
+                    onState = onVideoState,
+                    onOpenExternal = onOpenExternal,
+                )
+            }
         } else if (file != null && !isImage) {
             NonImageBody(file, ui, onOpenExternal, onDownload)
         }
-        if (ui.loading && bmp == null && isImage) {
+        if (ui.loading && bmp == null && (isImage || (videoReady && videoSource == null))) {
             Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Outlined.LockOpen, null, tint = EColors.Accent, modifier = Modifier.size(36.dp))
                 Spacer(Modifier.height(14.dp))
@@ -284,8 +348,17 @@ fun ViewerContent(
                 )
             }
         }
-        if (ui.error != null && isImage) {
-            Text(ui.error, color = EColors.Danger, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.Center).padding(32.dp))
+        if (ui.error != null && (isImage || videoReady)) {
+            Column(Modifier.align(Alignment.Center).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(ui.error, color = EColors.Danger, textAlign = TextAlign.Center)
+                if (videoReady) {
+                    Spacer(Modifier.height(8.dp))
+                    Row {
+                        if (videoSource == null) TextButton(onClick = onRetryVideo) { Text("Yenidən cəhd et", color = EColors.Accent) }
+                        TextButton(onClick = onOpenExternal) { Text("Kənar tətbiqdə aç", color = EColors.Accent) }
+                    }
+                }
+            }
         }
 
         // Üst panel
@@ -307,7 +380,7 @@ fun ViewerContent(
                     else Icon(Icons.Outlined.Download, "Cihaza endir", tint = Color.White)
                 }
             }
-            if (isImage) IconButton(onClick = onOpenExternal) { Icon(Icons.AutoMirrored.Outlined.OpenInNew, "Başqa tətbiqdə aç", tint = Color.White) }
+            if (isImage || isVideo) IconButton(onClick = onOpenExternal) { Icon(Icons.AutoMirrored.Outlined.OpenInNew, "Başqa tətbiqdə aç", tint = Color.White) }
             IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, "Sil", tint = Color.White) }
         }
 

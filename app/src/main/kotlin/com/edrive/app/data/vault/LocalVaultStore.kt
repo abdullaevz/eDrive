@@ -56,6 +56,22 @@ class LocalVaultStore @Inject constructor(
         files.delete(f.id)
     }
 
+    /**
+     * Drive-dan endirilmiş şifrəli nüsxələrin keşi [maxBytes]-dan böyükdürsə, ən köhnələrini silir
+     * (lazım olanda yenidən endirilir). [keepId] faylına toxunulmur. Outbox-a toxunulmur.
+     */
+    fun trimBlobCache(keepId: String, maxBytes: Long = BLOB_CACHE_LIMIT) {
+        val blobs = blobCache().listFiles { file -> file.name.endsWith(".edrv") } ?: return
+        var total = blobs.sumOf { it.length() }
+        if (total <= maxBytes) return
+        for (blob in blobs.sortedBy { it.lastModified() }) {
+            if (total <= maxBytes) break
+            if (blob.name == "$keepId.edrv") continue
+            val size = blob.length()
+            if (blob.delete()) total -= size
+        }
+    }
+
     /** Yarımçıq qalmış müvəqqəti faylları silir (proses gözlənilmədən dayananda). */
     fun cleanupPartials() {
         File(context.filesDir, "vault").listFiles()?.forEach { userDir ->
@@ -71,6 +87,9 @@ class LocalVaultStore @Inject constructor(
     companion object {
         /** Bu prefikslə başlayan xəta daimi sayılır — avtomatik təkrar cəhd edilmir. */
         const val PERMANENT = "⛔"
+
+        /** Endirilmiş şifrəli nüsxələr üçün keş limiti (2 GB). */
+        const val BLOB_CACHE_LIMIT = 2L * 1024 * 1024 * 1024
     }
 }
 

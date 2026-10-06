@@ -19,16 +19,25 @@ import com.edrive.app.data.db.dao.FileDao
 import com.edrive.app.data.db.dao.UserDao
 import com.edrive.app.data.db.entity.FileEntity
 import com.edrive.app.drive.DriveClientProvider
+import com.edrive.crypto.CryptoException
+import com.edrive.crypto.FileCiphertextSource
+import com.edrive.crypto.RandomAccessDecryptor
 import com.edrive.crypto.StreamingCipher
 import com.edrive.crypto.wipe
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.io.OutputStream
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Artıq vault-da olan fayllarla iş: siyahı, miniatür, baxış (yaddaşda deşifrə),
@@ -137,6 +146,34 @@ class FileAccessService @Inject constructor(
         folder
     }
 
+    /**
+     * Video üçün: şifrəli nüsxəni hazırlayıb ixtiyari mövqedən deşifrə edən oxuyucu qaytarır.
+     * Diskə açıq mətn yazılmır, yaddaşda yalnız bir neçə chunk (64 KiB) saxlanılır.
+     * Çağıran tərəf [RandomAccessDecryptor.close] etməlidir.
+     */
+    suspend fun openRandomAccess(id: String, onProgress: (Float) -> Unit = {}): RandomAccessDecryptor = withContext(Dispatchers.IO) {
+        val f = files.get(id) ?: error("Fayl tapılmadı")
+        val file = ciphertextFile(f, onProgress)
+        val dek = session.requireKey()
+        val source = FileCiphertextSource(file)
+        try {
+            val d = RandomAccessDecryptor.open(source, dek, f.id)
+            try {
+                if (d.plaintextLength != f.size) throw IOException("Şifrəli nüsxə gözlənilən ölçüdə deyil")
+                currentCoroutineContext().ensureActive()
+            } catch (e: Throwable) {
+                d.close()
+                throw e
+            }
+            d
+        } catch (e: Throwable) {
+            source.close()
+            throw e
+        } finally {
+            dek.wipe()
+        }
+    }
+
     /** Faylı həm Drive-dan, həm telefondan silir. */
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         val f = files.get(id) ?: return@withContext
@@ -166,29 +203,61 @@ class FileAccessService @Inject constructor(
         }
     }
 
+    private val downloadLocks = ConcurrentHashMap<String, Mutex>()
+
+    /** Lokal şifrəli nüsxə: əvvəl outbox, sonra endirmə keşi (keşə toxunuş vaxtı yenilənir ki, ən köhnələr silinsin). */
+    private fun localCiphertext(f: FileEntity): File? {
+        store.outboxData(f.userId, f.id).takeIf { it.exists() }?.let { return it }
+        return store.cachedBlob(f.id).takeIf { it.exists() }?.also { it.setLastModified(System.currentTimeMillis()) }
+    }
+
     /** Şifrəli faylı lokal mənbədən (outbox / keş) və ya Drive-dan endirərək tapır. */
     private suspend fun ciphertextFile(f: FileEntity, onProgress: (Float) -> Unit): File {
-        store.outboxData(f.userId, f.id).takeIf { it.exists() }?.let { return it }
-        val cached = store.cachedBlob(f.id)
-        if (cached.exists()) return cached
-        val email = users.byId(f.userId)?.driveEmail ?: throw IllegalStateException("Faylı açmaq üçün Google Drive-a qoşulun")
-        val dataId = f.driveDataId ?: throw IllegalStateException("Fayl hələ Drive-a yüklənməyib")
-        val tmp = store.partialBlob(f.id)
-        val total = StreamingCipher.ciphertextSize(f.size).coerceAtLeast(1)
-        drives.forAccount(email).download(dataId).use { input ->
-            tmp.outputStream().use { out ->
-                val buf = ByteArray(256 * 1024)
-                var done = 0L
-                while (true) {
-                    val n = input.read(buf)
-                    if (n < 0) break
-                    out.write(buf, 0, n)
-                    done += n
-                    onProgress(done.toFloat() / total)
+        localCiphertext(f)?.let { return it }
+        return downloadLocks.getOrPut(f.id) { Mutex() }.withLock {
+            // Gözləyərkən başqası endirməni bitirmiş ola bilər
+            localCiphertext(f)?.let { return@withLock it }
+            val email = users.byId(f.userId)?.driveEmail ?: throw IllegalStateException("Faylı açmaq üçün Google Drive-a qoşulun")
+            val dataId = f.driveDataId ?: throw IllegalStateException("Fayl hələ Drive-a yüklənməyib")
+            val tmp = store.partialBlob(f.id)
+            val total = StreamingCipher.ciphertextSize(f.size).coerceAtLeast(1)
+            drives.forAccount(email).download(dataId).use { input ->
+                tmp.outputStream().use { out ->
+                    val buf = ByteArray(256 * 1024)
+                    var done = 0L
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        done += n
+                        onProgress(done.toFloat() / total)
+                    }
                 }
             }
+            requireComplete(tmp, f)
+            val cached = store.cachedBlob(f.id)
+            if (!tmp.renameTo(cached)) {
+                tmp.copyTo(cached, overwrite = true)
+                tmp.delete()
+            }
+            store.trimBlobCache(keepId = f.id)
+            cached
         }
-        tmp.renameTo(cached)
-        return cached
+    }
+
+    /**
+     * Yarımçıq (kəsilmiş) endirmə keşə düşməsin: başlıqdakı chunk ölçüsünə görə gözlənilən ölçüdən qısadırsa rədd edilir.
+     * eDrive faylı kimi tanınmırsa toxunulmur — deşifrə mərhələsi özü xəta verəcək.
+     */
+    private fun requireComplete(file: File, f: FileEntity) {
+        val expected = try {
+            file.inputStream().use { StreamingCipher.ciphertextSize(f.size.coerceAtLeast(0), StreamingCipher.readHeader(it).chunkSize) }
+        } catch (e: CryptoException) {
+            return
+        }
+        if (file.length() < expected) {
+            file.delete()
+            throw IOException("Endirmə yarımçıq qaldı — yenidən cəhd edin")
+        }
     }
 }

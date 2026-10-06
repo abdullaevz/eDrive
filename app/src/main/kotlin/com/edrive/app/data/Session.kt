@@ -6,6 +6,7 @@ import com.edrive.crypto.wipe
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -25,7 +26,7 @@ class Session @Inject constructor() {
     val isInExternalUi: Boolean get() = externalUi.get() > 0
 
     /** Kilid zamanı yaddaşdakı keşləri (deşifrə olunmuş miniatürlər və s.) təmizləmək üçün. */
-    private val lockListeners = mutableListOf<() -> Unit>()
+    private val lockListeners = CopyOnWriteArrayList<() -> Unit>()
 
     val current: Unlocked? get() = _state.value
 
@@ -46,6 +47,9 @@ class Session @Inject constructor() {
     }
 
     fun addLockListener(l: () -> Unit) { lockListeners += l }
+
+    /** Ömrü bitən komponentlər (məs. video pleyer) dinləyicisini silməlidir ki, sızma olmasın. */
+    fun removeLockListener(l: () -> Unit) { lockListeners.remove(l) }
 
     fun beginExternalUi() { externalUi.incrementAndGet() }
     fun endExternalUi() { externalUi.updateAndGet { maxOf(0, it - 1) } }

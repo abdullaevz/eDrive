@@ -73,6 +73,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -246,6 +247,7 @@ fun HomeContent(
     onRetry: (String) -> Unit,
 ) {
     val connected = user?.driveUserFolderId != null
+    var filter by rememberSaveable(stateSaver = FileFilterSaver) { mutableStateOf(FileFilter()) }
     Scaffold(
         containerColor = EColors.Bg,
         snackbarHost = { SnackbarHost(snackbar) },
@@ -295,6 +297,7 @@ fun HomeContent(
         },
     ) { pad ->
         val list = files.orEmpty()
+        val shown = remember(list, filter) { applyFilter(list, filter) }
         LazyVerticalGrid(
             columns = GridCells.Adaptive(108.dp),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = pad.calculateTopPadding() + 4.dp, bottom = 120.dp),
@@ -302,6 +305,11 @@ fun HomeContent(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
+            if (list.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    FilterBar(filter, list, shown.size, onChange = { filter = it })
+                }
+            }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 SummaryHeader(list, connected, username)
             }
@@ -311,7 +319,10 @@ fun HomeContent(
             if (files != null && list.isEmpty() && connected) {
                 item(span = { GridItemSpan(maxLineSpan) }) { EmptyState() }
             }
-            items(list, key = { it.id }) { f ->
+            if (list.isNotEmpty() && shown.isEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) { NoMatches(onReset = { filter = FileFilter() }) }
+            }
+            items(shown, key = { it.id }) { f ->
                 FileTile(f, loadThumb, onClick = {
                     if (f.status == FileStatus.FAILED) onRetry(f.id) else onOpen(f.id)
                 })
@@ -357,6 +368,16 @@ private fun ConnectCard(busy: Boolean, onConnect: () -> Unit) {
         )
         Spacer(Modifier.height(4.dp))
         PrimaryButton("Google ilə qoşul", onConnect, loading = busy)
+    }
+}
+
+@Composable
+private fun NoMatches(onReset: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(Icons.Outlined.PhotoLibrary, null, tint = EColors.Faint, modifier = Modifier.size(40.dp))
+        Spacer(Modifier.height(12.dp))
+        Text("Bu süzgəcə uyğun fayl yoxdur", style = MaterialTheme.typography.titleMedium)
+        TextButton(onClick = onReset) { Text("Süzgəci sıfırla", color = EColors.Accent) }
     }
 }
 

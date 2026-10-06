@@ -65,7 +65,7 @@ Drive:    eDrive Storage/<istifadəçi>/vault.json   (salt + şifrəli DEK, sirr
 ## Struktur
 
 ```
-crypto/                       saf Kotlin: AES-GCM, STREAM şifrə, vault başlığı, manifest (+ JVM testləri)
+crypto/                       saf Kotlin: AES-GCM, STREAM şifrə, ixtiyari mövqedən deşifrə (RandomAccessDecryptor), vault başlığı, manifest (+ JVM testləri)
 app/src/main/kotlin/com/edrive/app/
  ├─ EDriveApp.kt              @HiltAndroidApp; di/ qovluğunda Hilt modulları (AppModule, BindingsModule)
  ├─ data/
@@ -81,8 +81,9 @@ app/src/main/kotlin/com/edrive/app/
  │       ├─ LocalVaultStore          lokal şifrəli faylların yerləşməsi
  │       ├─ ThumbnailCache, UploadScheduler
  ├─ drive/                    DriveClient interfeysi + Google implementasiyası, OAuth
+ ├─ media/                    EncryptedDataSource: ExoPlayer üçün şifrəli mənbə (video)
  ├─ security/                 Argon2id (native), BiometricKeyStore
- ├─ ui/                       Compose: auth, home, viewer, crash ekranı
+ ├─ ui/                       Compose: auth, home (süzgəc daxil), viewer (şəkil/video pleyer), crash ekranı
  ├─ util/                     media, bərpa PDF-i, çökmə hesabatı
  └─ work/                     UploadWorker
 ```
@@ -93,5 +94,6 @@ testlərdə saxta implementasiyalar istifadə olunur (`app/src/test/.../FakeDriv
 
 ## Məlum məhdudiyyətlər (v0.1)
 
-- Video və PDF tətbiqdaxili pleyerdə deyil, müvəqqəti deşifrə olunub kənar tətbiqdə açılır. Müvəqqəti fayl kilid zamanı silinir.
+- Video tətbiqdaxili pleyerdə oynayır (yaddaşda deşifrə, diskə açıq mətn yazılmır), amma oynamazdan əvvəl şifrəli fayl tam endirilir; Drive-dan axınla oxuma hələ yoxdur.
+- PDF tətbiqdaxili baxışda deyil, müvəqqəti deşifrə olunub kənar tətbiqdə açılır. Müvəqqəti fayl kilid zamanı silinir.
 - Kəsilən yükləmə növbəti dəfə əvvəldən başlayır (resumable davamı hələ yoxdur).

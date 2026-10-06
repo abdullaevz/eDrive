@@ -4,8 +4,15 @@ Format [Keep a Changelog](https://keepachangelog.com/) əsasındadır. Versiya n
 
 ## [Buraxılmamış]
 
+### Əlavə olundu
+- Tətbiqdaxili video pleyer: video şifrəli halda endirilir və yaddaşda (RAM) deşifrə olunub oynadılır, diskə açıq mətn yazılmır. Axtarış (seek), ±10 san, qoşa toxunuşla irəli/geri, tam ekran səthi. Dəstəklənməyən codec üçün "Kənar tətbiqdə aç" ehtiyatı qalır.
+- Ana ekranın başında süzgəc: yan-yana "Şəkil" və "Video" düymələri. Seçiləndə ona uyğun seçimlər açılır: format (JPG, PNG, MP4, MOV…), yönəliş (üfüqi/şaquli) və sıralama (tarix, ölçü, ad).
+- `crypto`: `RandomAccessDecryptor` — `.edrv` formatını dəyişmədən ixtiyari mövqedən deşifrə (kəsilmə, dəyişdirmə və əlavə edilmiş baytlar aşkarlanır).
+
 ### Dəyişdi
 - Əl ilə asılılıq idarəsi (`AppContainer`) Hilt ilə əvəz olundu. İstifadəçiyə görünən dəyişiklik yoxdur.
+- Drive-dan endirilən şifrəli nüsxə yarımçıq qalarsa, keşə düşmür (əvvəl bu, faylın sonradan açılmamasına səbəb ola bilərdi). Eyni fayl eyni anda iki yerdən endirilmir.
+- Endirmə keşi 2 GB ilə məhdudlaşdırıldı (ən köhnə nüsxələr silinir, lazım olanda yenidən endirilir).
 
 ## [0.1.0] — ilk test versiyası
 

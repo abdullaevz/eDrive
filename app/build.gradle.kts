@@ -119,6 +119,7 @@ dependencies {
     implementation(libs.androidx.work)
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.exifinterface)
+    implementation(libs.androidx.media3.exoplayer)
 
     implementation(libs.play.services.auth)
     implementation(libs.okhttp)
