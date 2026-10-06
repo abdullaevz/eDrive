@@ -87,9 +87,10 @@ object Media {
         return applyOrientation(bmp, orientation)
     }
 
-    private fun sampleSize(w: Int, h: Int, target: Int): Int {
+    /** Ən uzun tərəf [target]-dən böyük olmayana qədər 2-nin qüvvəsi ilə kiçildir (8160 px → hədəf 4096 üçün 2). */
+    internal fun sampleSize(w: Int, h: Int, target: Int): Int {
         var s = 1
-        while (max(w, h) / (s * 2) >= target) s *= 2
+        while (max(w, h) / s > target) s *= 2
         return s
     }
 
