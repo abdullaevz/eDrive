@@ -229,12 +229,13 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun import(uris: List<Uri>) {
+    /** @param folderId hədəf qovluq (`null` — kök) */
+    fun import(uris: List<Uri>, folderId: String?) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
             _ui.update { it.copy(importing = true) }
             try {
-                importer.import(uris)
+                importer.import(uris, folderId)
                 message("${uris.size} fayl şifrələndi · Drive-a yüklənir")
             } catch (e: Exception) {
                 message(friendly(e))

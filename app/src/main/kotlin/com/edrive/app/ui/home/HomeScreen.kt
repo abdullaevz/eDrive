@@ -56,6 +56,8 @@ import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.AlertDialog
@@ -103,6 +105,7 @@ import androidx.compose.ui.unit.sp
 import com.edrive.app.drive.DriveLayout
 import com.edrive.app.data.db.entity.FileEntity
 import com.edrive.app.data.db.entity.FileStatus
+import com.edrive.app.data.db.entity.FolderEntity
 import com.edrive.app.data.db.entity.UserEntity
 import com.edrive.app.ui.components.Avatar
 import com.edrive.app.ui.components.EField
@@ -115,6 +118,15 @@ import com.edrive.app.ui.drive.DriveViewModel
 import com.edrive.app.ui.drive.KeyDocumentDialog
 import com.edrive.app.ui.drive.SecurityKeyDialog
 import com.edrive.app.ui.findActivity
+import com.edrive.app.ui.folders.Breadcrumb
+import com.edrive.app.ui.folders.DeleteFolderDialog
+import com.edrive.app.ui.folders.FolderActionsDialog
+import com.edrive.app.ui.folders.FolderDialog
+import com.edrive.app.ui.folders.FolderLocation
+import com.edrive.app.ui.folders.FolderNameDialog
+import com.edrive.app.ui.folders.FolderTile
+import com.edrive.app.ui.folders.FoldersViewModel
+import com.edrive.app.ui.folders.MoveToFolderDialog
 import com.edrive.app.ui.theme.EColors
 import com.edrive.app.util.formatBytes
 import kotlinx.coroutines.launch
@@ -124,6 +136,7 @@ import kotlinx.coroutines.launch
 fun HomeRoute(
     vm: HomeViewModel,
     driveVm: DriveViewModel,
+    foldersVm: FoldersViewModel,
     diagnostics: () -> String,
     onGallery: () -> Unit = {},
     onOpen: (String) -> Unit,
@@ -132,6 +145,9 @@ fun HomeRoute(
     val files by vm.files.collectAsState()
     val ui by vm.ui.collectAsState()
     val drive by driveVm.ui.collectAsState()
+    val location by foldersVm.location.collectAsState()
+    val folderUi by foldersVm.ui.collectAsState()
+    var menuFolder by remember { mutableStateOf<FolderEntity?>(null) }
     val selection by vm.selection.collectAsState()
     val context = LocalContext.current
     val activity = context.findActivity()
@@ -145,6 +161,7 @@ fun HomeRoute(
     var showProblems by remember { mutableStateOf(false) }
 
     BackHandler(enabled = selection.active) { vm.clearSelection() }
+    BackHandler(enabled = !selection.active && location.current != null) { foldersVm.up() }
 
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         vm.endExternalUi()
@@ -167,11 +184,11 @@ fun HomeRoute(
     }
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris ->
         vm.endExternalUi()
-        vm.import(uris)
+        vm.import(uris, location.currentId)
     }
     val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         vm.endExternalUi()
-        vm.import(uris)
+        vm.import(uris, location.currentId)
     }
     val saveLog = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         vm.endExternalUi()
@@ -193,6 +210,9 @@ fun HomeRoute(
                 is HomeEvent.LaunchConsent -> consent.launch(IntentSenderRequest.Builder(e.pendingIntent.intentSender).build())
             }
         }
+    }
+    LaunchedEffect(Unit) {
+        foldersVm.messages.collect { scope.launch { snackbar.showSnackbar(it) } }
     }
     LaunchedEffect(Unit) {
         driveVm.events.collect { e ->
@@ -230,6 +250,12 @@ fun HomeRoute(
         onOpen = onOpen,
         onRetry = vm::retry,
         onProblems = { showProblems = true },
+        folders = location,
+        folderActions = FolderActions(
+            onOpen = foldersVm::open,
+            onMenu = { menuFolder = it },
+            onCreate = foldersVm::showCreate,
+        ),
         selection = selection,
         selectionActions = SelectionActions(
             onToggle = vm::toggleSelect,
@@ -239,6 +265,7 @@ fun HomeRoute(
             onDownload = { confirmDownload = true },
             onDelete = { confirmDelete = true },
             onInfo = { showInfo = true },
+            onMove = { foldersVm.showMove(selection.ids) },
         ),
     )
 
@@ -310,6 +337,25 @@ fun HomeRoute(
                 },
             )
         }
+    }
+
+    menuFolder?.let { f ->
+        FolderActionsDialog(
+            f,
+            onRename = { menuFolder = null; foldersVm.showRename(f) },
+            onDelete = { menuFolder = null; foldersVm.showDelete(f) },
+            onDismiss = { menuFolder = null },
+        )
+    }
+    when (val d = folderUi.dialog) {
+        FolderDialog.Create -> FolderNameDialog("Yeni qovluq", "", folderUi.busy, folderUi.error, foldersVm::create, foldersVm::dismiss)
+        is FolderDialog.Rename -> FolderNameDialog("Adını dəyiş", d.folder.name, folderUi.busy, folderUi.error, foldersVm::rename, foldersVm::dismiss)
+        is FolderDialog.Delete -> DeleteFolderDialog(d.folder, d.contents, folderUi.busy, folderUi.error, foldersVm::delete, foldersVm::dismiss)
+        is FolderDialog.Move -> MoveToFolderDialog(
+            location.all, d.fileIds.size, folderUi.busy, folderUi.error,
+            onMove = { target -> foldersVm.move(target, onDone = vm::clearSelection) }, onDismiss = foldersVm::dismiss,
+        )
+        null -> Unit
     }
 
     if (showProblems) {
@@ -388,12 +434,15 @@ fun HomeContent(
     onOpen: (String) -> Unit,
     onRetry: (String) -> Unit,
     onProblems: () -> Unit = {},
+    folders: FolderLocation = FolderLocation(),
+    folderActions: FolderActions = FolderActions(),
     selection: SelectionState = SelectionState(),
     selectionActions: SelectionActions = SelectionActions(),
 ) {
     val connected = user?.isDriveReady == true
     var filter by rememberSaveable(stateSaver = FileFilterSaver) { mutableStateOf(FileFilter()) }
-    val list = files.orEmpty()
+    val all = files.orEmpty()
+    val list = remember(all, folders.currentId) { all.filter { it.folderId == folders.currentId } }
     val shown = remember(list, filter) { applyFilter(list, filter) }
     val busy = ui.batch != null
     Scaffold(
@@ -412,6 +461,9 @@ fun HomeContent(
                     actions = {
                         IconButton(onClick = { selectionActions.onSelectAll(shown.map { it.id }) }, enabled = !busy && shown.isNotEmpty()) {
                             Icon(Icons.Outlined.SelectAll, "Hamısını seç", tint = EColors.Muted)
+                        }
+                        if (connected) IconButton(onClick = selectionActions.onMove, enabled = n > 0 && !busy) {
+                            Icon(Icons.AutoMirrored.Outlined.DriveFileMove, "Qovluğa köçür", tint = if (n > 0 && !busy) EColors.Muted else EColors.Faint)
                         }
                         if (n == 1) IconButton(onClick = selectionActions.onInfo, enabled = !busy) { Icon(Icons.Outlined.Info, "Məlumat", tint = EColors.Muted) }
                         IconButton(onClick = selectionActions.onDownload, enabled = n > 0 && !busy) {
@@ -452,6 +504,9 @@ fun HomeContent(
                             }
                         }
                     }
+                    if (connected) {
+                        IconButton(onClick = folderActions.onCreate) { Icon(Icons.Outlined.CreateNewFolder, "Yeni qovluq", tint = EColors.Muted) }
+                    }
                     if (list.isNotEmpty()) {
                         IconButton(onClick = selectionActions.onStart) { Icon(Icons.Outlined.CheckCircle, "Seç", tint = EColors.Muted) }
                     }
@@ -490,12 +545,20 @@ fun HomeContent(
                 }
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
-                SummaryHeader(list, connected, username)
+                SummaryHeader(all, connected)
+            }
+            if (connected && (folders.current != null || folders.children.isNotEmpty())) {
+                item(span = { GridItemSpan(maxLineSpan) }) { Breadcrumb(folders.path, folderActions.onOpen) }
+            }
+            if (!selection.active) {
+                items(folders.children, key = { "folder-" + it.id }) { f ->
+                    FolderTile(f, onClick = { folderActions.onOpen(f.id) }, onLongClick = { folderActions.onMenu(f) })
+                }
             }
             if (!connected) {
                 item(span = { GridItemSpan(maxLineSpan) }) { ConnectCard(driveBusy, onConnect) }
             }
-            if (files != null && list.isEmpty() && connected) {
+            if (files != null && list.isEmpty() && folders.children.isEmpty() && connected) {
                 item(span = { GridItemSpan(maxLineSpan) }) { EmptyState() }
             }
             if (list.isNotEmpty() && shown.isEmpty()) {
@@ -518,7 +581,7 @@ fun HomeContent(
 }
 
 @Composable
-private fun SummaryHeader(files: List<FileEntity>, connected: Boolean, username: String) {
+private fun SummaryHeader(files: List<FileEntity>, connected: Boolean) {
     Column(Modifier.padding(bottom = 10.dp, top = 4.dp)) {
         Text("Şifrəli fayllar", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(4.dp))
@@ -527,7 +590,7 @@ private fun SummaryHeader(files: List<FileEntity>, connected: Boolean, username:
         Text(
             buildString {
                 append("${files.size} fayl · ${formatBytes(total)}")
-                if (connected) append(" · ${DriveLayout.ROOT_FOLDER}/$username")
+                if (connected) append(" · ${DriveLayout.ROOT_FOLDER}")
                 if (pending > 0) append(" · $pending növbədə")
             },
             color = EColors.Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,

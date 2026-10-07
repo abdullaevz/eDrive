@@ -45,6 +45,22 @@ class FakeDrive(private val email: String = "natiq@gmail.com") : DriveClient, Dr
     override suspend fun ensureFolder(name: String, parentId: String?): String =
         findByName(name, parentId, folder = true)?.id ?: create(name, parentId, true, ByteArray(0)).id
 
+    override suspend fun createFolder(name: String, parentId: String?) = create(name, parentId, true, ByteArray(0)).toFile()
+
+    override suspend fun rename(fileId: String, name: String) {
+        val n = nodes.getValue(fileId)
+        nodes[fileId] = Node(n.id, name, n.parent, n.folder, n.bytes)
+    }
+
+    /** Zibil: qovluq və bütün nəsilləri görünməz olur (burada sadəcə [trashed]-ə köçürülür). */
+    val trashed = linkedMapOf<String, Node>()
+
+    override suspend fun trash(fileId: String) {
+        val n = nodes.remove(fileId) ?: return
+        trashed[fileId] = n
+        nodes.values.filter { it.parent == fileId }.map { it.id }.forEach { trash(it) }
+    }
+
     override suspend fun listChildren(parentId: String) = nodes.values.filter { it.parent == parentId }.map { it.toFile() }
 
     override suspend fun uploadSmall(name: String, parentId: String, bytes: ByteArray, mime: String, existingId: String?): DriveFile {

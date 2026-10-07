@@ -10,6 +10,7 @@ import com.edrive.app.data.db.AppDatabase
 import com.edrive.app.data.db.entity.FileEntity
 import com.edrive.app.data.vault.DriveConnectionService
 import com.edrive.app.data.vault.FileAccessService
+import com.edrive.app.data.vault.FolderService
 import com.edrive.app.data.vault.ImportService
 import com.edrive.app.data.vault.LocalVaultStore
 import com.edrive.app.data.vault.RemoteVaultMonitor
@@ -87,6 +88,7 @@ class TestPhone(ctx: Context, drive: FakeDrive = FakeDrive()) {
     val importer = ImportService(ctx, session, db.files(), store, scheduler)
     val uploads = UploadService(db.users(), db.files(), store, drive, scheduler, monitor)
     val fileAccess = FileAccessService(ctx, session, db.users(), db.files(), store, drive, cache)
+    val folders = FolderService(session, db.users(), db.folders(), db.files(), store, drive, clock)
 
     fun register(name: String, pin: String = "4826") = runBlocking {
         accounts.activate(accounts.register(name, pin.toCharArray(), pin.toCharArray()))

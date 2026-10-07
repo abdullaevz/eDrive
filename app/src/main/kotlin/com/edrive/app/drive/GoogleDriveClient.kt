@@ -49,7 +49,7 @@ class GoogleDriveClient(
         return get<DriveFileList>(url).files.firstOrNull()
     }
 
-    private suspend fun createFolder(name: String, parentId: String?): DriveFile {
+    override suspend fun createFolder(name: String, parentId: String?): DriveFile {
         val body = buildJsonObject {
             put("name", name)
             put("mimeType", FOLDER_MIME)
@@ -76,6 +76,14 @@ class GoogleDriveClient(
             page = res.nextPageToken
         } while (page != null)
         return all
+    }
+
+    override suspend fun rename(fileId: String, name: String) = patch(fileId, buildJsonObject { put("name", name) }.toString())
+
+    override suspend fun trash(fileId: String) = patch(fileId, buildJsonObject { put("trashed", true) }.toString())
+
+    private suspend fun patch(fileId: String, json: String) {
+        execute(Request.Builder().url("$base/files/$fileId?fields=id").patch(json.toRequestBody(JSON))).close()
     }
 
     override suspend fun move(fileId: String, fromParentId: String, toParentId: String) {

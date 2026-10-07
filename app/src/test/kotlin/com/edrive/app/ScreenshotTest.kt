@@ -14,7 +14,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import com.edrive.app.data.db.entity.FileEntity
 import com.edrive.app.data.db.entity.FileStatus
+import com.edrive.app.data.db.entity.FolderEntity
 import com.edrive.app.data.db.entity.UserEntity
+import com.edrive.app.ui.folders.FolderLocation
 import com.edrive.app.ui.auth.AuthActions
 import com.edrive.app.ui.auth.AuthContent
 import com.edrive.app.ui.auth.AuthMode
@@ -98,11 +100,19 @@ class ScreenshotTest {
     )
 
     @Composable
-    private fun home(user: UserEntity?, files: List<FileEntity>) { HomeContent(
+    private fun home(user: UserEntity?, files: List<FileEntity>, folders: FolderLocation = FolderLocation()) { HomeContent(
         username = "natiq", user = user, files = files, ui = HomeUi(), snackbar = SnackbarHostState(),
         loadThumb = { id -> thumb(id.last().digitToInt()) },
         onAccount = noop, onLock = noop, onSync = noop, onConnect = noop, onUpload = noop, onOpen = {}, onRetry = {},
+        folders = folders,
     ) }
+
+    @Test fun homeFolders() = shot("4b-home-folders") {
+        val docs = FolderEntity("f1", 1, "Sənədlər", null, 0)
+        val trip = FolderEntity("f2", 1, "Səyahət 2026", "f1", 0)
+        val tax = FolderEntity("f3", 1, "Vergi", "f1", 0)
+        home(user, files.map { it.copy(folderId = "f1") }.take(3), FolderLocation(docs, listOf(docs), listOf(trip, tax), listOf(docs, trip, tax)))
+    }
 
     @Test fun homeGallery() = shot("4-home") { home(user, files) }
 

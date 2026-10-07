@@ -16,6 +16,10 @@ interface DriveClient {
     suspend fun findByName(name: String, parentId: String?, folder: Boolean = false): DriveFile?
     /** Qovluq varsa onun ID-sini, yoxdursa yaradıb ID-sini qaytarır. */
     suspend fun ensureFolder(name: String, parentId: String?): String
+    suspend fun createFolder(name: String, parentId: String?): DriveFile
+    suspend fun rename(fileId: String, name: String)
+    /** Zibil qutusuna göndərir (Drive-da 30 gün bərpa oluna bilir). Qovluqla birlikdə içindəkilər də gedir. */
+    suspend fun trash(fileId: String)
     suspend fun listChildren(parentId: String): List<DriveFile>
     /** Faylı/qovluğu bir qovluqdan digərinə köçürür (məzmun dəyişmir, ID eyni qalır). */
     suspend fun move(fileId: String, fromParentId: String, toParentId: String)

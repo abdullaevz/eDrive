@@ -12,6 +12,13 @@ data class BatchProgress(val label: String, val done: Int, val total: Int, val c
 }
 
 /** Seçim rejiminin ekran əməliyyatları. Defolt dəyərlər boşdur ki, ekran testləri dəyişməsin. */
+/** Qovluq naviqasiyası hadisələri (ekran ViewModel-dən asılı olmasın). */
+class FolderActions(
+    val onOpen: (String?) -> Unit = {},
+    val onMenu: (com.edrive.app.data.db.entity.FolderEntity) -> Unit = {},
+    val onCreate: () -> Unit = {},
+)
+
 class SelectionActions(
     val onToggle: (String) -> Unit = {},
     val onStart: () -> Unit = {},
@@ -20,6 +27,7 @@ class SelectionActions(
     val onDownload: () -> Unit = {},
     val onDelete: () -> Unit = {},
     val onInfo: () -> Unit = {},
+    val onMove: () -> Unit = {},
 )
 
 /** Faylın tam şifrəli nüsxəsi əlçatandır (Drive-da, növbədə və ya yalnız cihazda) — açmaq/endirmək olar. */

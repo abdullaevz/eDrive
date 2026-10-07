@@ -31,6 +31,7 @@ import javax.inject.Inject
 import com.edrive.app.ui.auth.AuthRoute
 import com.edrive.app.ui.gallery.GalleryRoute
 import com.edrive.app.ui.drive.DriveViewModel
+import com.edrive.app.ui.folders.FoldersViewModel
 import com.edrive.app.ui.home.HomeRoute
 import com.edrive.app.ui.home.HomeViewModel
 import com.edrive.app.ui.theme.EColors
@@ -75,10 +76,11 @@ fun Root(sessionHolder: Session, reporter: CrashReporter) {
                 val nav = rememberNavController()
                 val homeVm: HomeViewModel = hiltViewModel(key = "home-${s.userId}")
                 val driveVm: DriveViewModel = hiltViewModel(key = "drive-${s.userId}")
+                val foldersVm: FoldersViewModel = hiltViewModel(key = "folders-${s.userId}")
                 NavHost(nav, startDestination = "home") {
-                    composable("home") { HomeRoute(homeVm, driveVm, reporter::diagnostics, onGallery = { nav.navigate("gallery") }) { id -> nav.navigate("viewer/$id") } }
+                    composable("home") { HomeRoute(homeVm, driveVm, foldersVm, reporter::diagnostics, onGallery = { nav.navigate("gallery") }) { id -> nav.navigate("viewer/$id") } }
                     composable("gallery") {
-                        GalleryRoute(onClose = { nav.popBackStack() }, onImport = { uris -> homeVm.import(uris); nav.popBackStack() })
+                        GalleryRoute(onClose = { nav.popBackStack() }, onImport = { uris -> homeVm.import(uris, foldersVm.location.value.currentId); nav.popBackStack() })
                     }
                     composable("viewer/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) {
                         ViewerRoute(hiltViewModel()) { nav.popBackStack() }
