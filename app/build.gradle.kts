@@ -24,8 +24,8 @@ android {
         applicationId = "com.edrive.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 3
-        versionName = "1.1.1"
+        versionCode = 4
+        versionName = "1.2.0"
     }
 
     signingConfigs {
@@ -51,7 +51,7 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"   // telefonda: com.edrive.app.debug
-            versionNameSuffix = "-dev"       // Parametrlər → Tətbiq haqqında: 0.1.0-dev
+            versionNameSuffix = "-dev"       // Parametrlər → Tətbiq haqqında: 1.2.0-dev
         }
         release {
             isMinifyEnabled = true
