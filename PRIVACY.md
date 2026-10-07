@@ -10,10 +10,10 @@ Tətbiqin tərtibatçısı **heç bir məlumat toplamır, saxlamır və üçünc
 
 ## Məlumatlar harada saxlanılır?
 
-- **Telefonda:** istifadəçi adı, parolun törəməsi olan şifrələmə başlığı (parolun özü saxlanılmır), şifrələnmiş fayllar və miniatürlər. Hamısı tətbiqin qapalı yaddaşındadır və Android ehtiyat nüsxəsinə daxil edilmir.
-- **İstifadəçinin Google Drive-ında:** `eDrive Storage` qovluğunda yalnız **şifrələnmiş** fayllar. Fayl adları və məzmunu Drive-da açıq görünmür.
+- **Telefonda:** istifadəçi adı, PIN-in yoxlama dəyəri (PIN-in özü saxlanılmır), vault başlığının nüsxəsi, telefonun Keystore açarı ilə qorunan vault açarı, şifrələnmiş fayllar və miniatürlər. Hamısı tətbiqin qapalı yaddaşındadır və Android ehtiyat nüsxəsinə daxil edilmir.
+- **İstifadəçinin Google Drive-ında:** `eDrive Storage` qovluğunda `vault.json` (sirr ehtiva etmir) və yalnız **şifrələnmiş** fayllar. Fayl adları və məzmunu Drive-da açıq görünmür. İstifadəçinin özü yaratdığı alt qovluqların **adları** Drive-da açıq mətndir.
 
-Parol və şifrələmə açarları telefondan kənara göndərilmir. Parol itirilərsə, faylları bərpa etmək mümkün deyil.
+PIN, Təhlükəsizlik açarı və şifrələmə açarları telefondan kənara göndərilmir. Təhlükəsizlik açarı itirilərsə (və açar sənədi yoxdursa), faylları bərpa etmək mümkün deyil.
 
 ## Telefon icazələri (foto və video)
 
@@ -27,11 +27,11 @@ eDrive-ın Google API-lərindən aldığı məlumatı istifadəsi və başqasın
 
 ## Çökmə hesabatları
 
-Tətbiq çöksə, texniki xəta jurnalı telefonda saxlanılır. Jurnalda parol, açar, fayl adı və ya fayl məzmunu olmur. Hesabatı yalnız istifadəçi özü paylaşmaq qərarına gələrsə kopyalayıb göndərə və ya fayl kimi saxlaya bilər.
+Tətbiq çöksə, texniki xəta jurnalı telefonda saxlanılır. Jurnalda PIN, açar, fayl və qovluq adı və ya fayl məzmunu olmur. Hesabatı yalnız istifadəçi özü paylaşmaq qərarına gələrsə kopyalayıb göndərə və ya fayl kimi saxlaya bilər.
 
 ## Hesabın ayrılması və məlumatların silinməsi
 
-- Tətbiqdə **Ayır** düyməsi Drive girişini ləğv edir.
+- Tətbiqdə **Ayır** düyməsi Drive girişini ləğv edir və telefondakı şifrəli nüsxələri, miniatürləri və vault açarını silir.
 - Google hesabınızın [icazələr səhifəsindən](https://myaccount.google.com/permissions) eDrive-ın girişini istənilən vaxt ləğv edə bilərsiniz.
 - Drive-dakı `eDrive Storage` qovluğunu özünüz silə bilərsiniz.
 - Tətbiqi silsəniz, telefondakı bütün lokal məlumat silinir.

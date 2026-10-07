@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Sync
@@ -66,8 +67,9 @@ fun AccountSheetContent(
     onBiometric: (Boolean) -> Unit,
     onLock: () -> Unit,
     onExportLog: () -> Unit = {},
+    onChangeKey: () -> Unit = {},
 ) {
-    val connected = user?.driveUserFolderId != null
+    val connected = user?.isDriveReady == true
     Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Avatar(username, 52.dp)
@@ -104,7 +106,7 @@ fun AccountSheetContent(
             }
             if (connected) {
                 InfoRow(Icons.Outlined.Cloud, user?.driveEmail.orEmpty())
-                InfoRow(Icons.Outlined.Folder, "${DriveLayout.ROOT_FOLDER} / $username")
+                InfoRow(Icons.Outlined.Folder, DriveLayout.ROOT_FOLDER)
                 val synced = files.count { it.status == FileStatus.SYNCED }
                 val size = files.filter { it.status == FileStatus.SYNCED }.sumOf { it.size.coerceAtLeast(0) }
                 Text("$synced fayl Drive-da · ${formatBytes(size)} (şifrəli)", color = EColors.Muted, fontSize = 13.sp)
@@ -137,12 +139,20 @@ fun AccountSheetContent(
                 Icon(Icons.Outlined.Fingerprint, null, tint = EColors.Accent)
                 Column(Modifier.weight(1f).padding(start = 12.dp)) {
                     Text("Barmaq izi ilə giriş")
-                    Text("Parol yerinə biometrik təsdiq", color = EColors.Faint, fontSize = 12.sp)
+                    Text("PIN yerinə biometrik təsdiq", color = EColors.Faint, fontSize = 12.sp)
                 }
                 Switch(
-                    checked = user?.bioWrappedDek != null, onCheckedChange = onBiometric,
+                    checked = user?.biometricEnabled == true, onCheckedChange = onBiometric,
                     colors = SwitchDefaults.colors(checkedTrackColor = EColors.Accent, checkedThumbColor = EColors.AccentInk),
                 )
+            }
+        }
+
+        if (user?.isDriveReady == true) {
+            OutlinedButton(onClick = onChangeKey, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                Icon(Icons.Outlined.Key, null, tint = EColors.Accent, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Təhlükəsizlik açarını dəyiş", color = EColors.Text)
             }
         }
 

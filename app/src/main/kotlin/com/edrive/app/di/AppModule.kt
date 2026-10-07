@@ -3,8 +3,11 @@ package com.edrive.app.di
 import android.content.Context
 import androidx.room.Room
 import com.edrive.app.data.db.AppDatabase
+import com.edrive.app.data.db.Migrations
 import com.edrive.app.data.db.dao.FileDao
+import com.edrive.app.data.db.dao.FolderDao
 import com.edrive.app.data.db.dao.UserDao
+import com.edrive.app.util.Clock
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -42,13 +45,21 @@ object AppModule {
     @Provides
     @Singleton
     fun database(@ApplicationContext context: Context): AppDatabase =
-        Room.databaseBuilder(context, AppDatabase::class.java, "edrive.db").build()
+        Room.databaseBuilder(context, AppDatabase::class.java, AppDatabase.NAME)
+            .addMigrations(*Migrations.ALL)
+            .build()
 
     @Provides
     fun userDao(db: AppDatabase): UserDao = db.users()
 
     @Provides
     fun fileDao(db: AppDatabase): FileDao = db.files()
+
+    @Provides
+    fun folderDao(db: AppDatabase): FolderDao = db.folders()
+
+    @Provides
+    fun clock(): Clock = Clock.SYSTEM
 
     @Provides
     @Singleton

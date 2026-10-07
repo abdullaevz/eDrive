@@ -53,18 +53,36 @@ class VaultKeys(private val kdf: PasswordKdf) {
     class Created(val header: VaultHeader, val dek: ByteArray)
 
     fun create(password: CharArray, nowIso: String, params: KdfParams = KdfParams.DEFAULT): Created {
+        val dek = AesGcm.newKey()
+        return Created(seal(dek, password, params, nowIso), dek)
+    }
+
+    /**
+     * Parol dəyişməsi: eyni DEK yeni təsadüfi salt və yeni paroldan törədilən KEK ilə yenidən sarılır.
+     * DEK, `keyId` və bütün fayllar dəyişmir. Köhnə başlıq nüsxəsi köhnə parolla hələ də açılır.
+     *
+     * @throws AuthenticationFailedException köhnə parol səhvdirsə
+     */
+    fun rewrap(header: VaultHeader, oldPassword: CharArray, newPassword: CharArray, params: KdfParams = header.kdf.params()): VaultHeader {
+        val dek = unlock(header, oldPassword)
+        try {
+            return seal(dek, newPassword, params, header.createdAt)
+        } finally {
+            dek.wipe()
+        }
+    }
+
+    private fun seal(dek: ByteArray, password: CharArray, params: KdfParams, createdAt: String): VaultHeader {
         val salt = AesGcm.randomBytes(16)
         val kek = kdf.deriveKey(password, salt, params)
-        val dek = AesGcm.newKey()
         try {
             val b64 = Base64.getEncoder()
-            val header = VaultHeader(
+            return VaultHeader(
                 kdf = VaultHeader.Kdf("argon2id", params.memoryKiB, params.iterations, params.parallelism, b64.encodeToString(salt)),
                 wrappedDek = b64.encodeToString(AesGcm.seal(kek, dek, CryptoConstants.AAD_DEK)),
-                createdAt = nowIso,
+                createdAt = createdAt,
                 keyId = AesGcm.keyId(dek),
             )
-            return Created(header, dek)
         } finally {
             kek.wipe()
         }

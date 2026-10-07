@@ -56,8 +56,12 @@ import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -101,23 +105,49 @@ import androidx.compose.ui.unit.sp
 import com.edrive.app.drive.DriveLayout
 import com.edrive.app.data.db.entity.FileEntity
 import com.edrive.app.data.db.entity.FileStatus
+import com.edrive.app.data.db.entity.FolderEntity
 import com.edrive.app.data.db.entity.UserEntity
 import com.edrive.app.ui.components.Avatar
 import com.edrive.app.ui.components.EField
 import com.edrive.app.ui.components.FileInfoDialog
 import com.edrive.app.ui.components.PrimaryButton
 import com.edrive.app.ui.components.StatusDot
+import com.edrive.app.ui.drive.DisconnectDialog
+import com.edrive.app.ui.drive.DriveEvent
+import com.edrive.app.ui.drive.DriveViewModel
+import com.edrive.app.ui.drive.KeyDocumentDialog
+import com.edrive.app.ui.drive.SecurityKeyDialog
 import com.edrive.app.ui.findActivity
+import com.edrive.app.ui.folders.Breadcrumb
+import com.edrive.app.ui.folders.DeleteFolderDialog
+import com.edrive.app.ui.folders.FolderActionsDialog
+import com.edrive.app.ui.folders.FolderDialog
+import com.edrive.app.ui.folders.FolderLocation
+import com.edrive.app.ui.folders.FolderNameDialog
+import com.edrive.app.ui.folders.FolderTile
+import com.edrive.app.ui.folders.FoldersViewModel
+import com.edrive.app.ui.folders.MoveToFolderDialog
 import com.edrive.app.ui.theme.EColors
 import com.edrive.app.util.formatBytes
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Unit = {}, onOpen: (String) -> Unit) {
+fun HomeRoute(
+    vm: HomeViewModel,
+    driveVm: DriveViewModel,
+    foldersVm: FoldersViewModel,
+    diagnostics: () -> String,
+    onGallery: () -> Unit = {},
+    onOpen: (String) -> Unit,
+) {
     val user by vm.user.collectAsState()
     val files by vm.files.collectAsState()
     val ui by vm.ui.collectAsState()
+    val drive by driveVm.ui.collectAsState()
+    val location by foldersVm.location.collectAsState()
+    val folderUi by foldersVm.ui.collectAsState()
+    var menuFolder by remember { mutableStateOf<FolderEntity?>(null) }
     val selection by vm.selection.collectAsState()
     val context = LocalContext.current
     val activity = context.findActivity()
@@ -128,8 +158,10 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Uni
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmDownload by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
+    var showProblems by remember { mutableStateOf(false) }
 
     BackHandler(enabled = selection.active) { vm.clearSelection() }
+    BackHandler(enabled = !selection.active && location.current != null) { foldersVm.up() }
 
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         vm.endExternalUi()
@@ -137,22 +169,26 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Uni
     }
 
     val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
-        vm.endExternalUi()
-        if (r.resultCode == android.app.Activity.RESULT_OK) vm.onConsentResult(r.data)
+        driveVm.endExternalUi()
+        if (r.resultCode == android.app.Activity.RESULT_OK) driveVm.onConsentResult(r.data)
     }
     val pickAccount = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-        vm.endExternalUi()
+        driveVm.endExternalUi()
         if (r.resultCode == android.app.Activity.RESULT_OK) {
-            vm.onAccountPicked(r.data?.getStringExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME))
+            driveVm.onAccountPicked(r.data?.getStringExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME))
         }
+    }
+    val saveKeyPdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        driveVm.endExternalUi()
+        if (uri != null) driveVm.saveKeyDocument(context, uri)
     }
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris ->
         vm.endExternalUi()
-        vm.import(uris)
+        vm.import(uris, location.currentId)
     }
     val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         vm.endExternalUi()
-        vm.import(uris)
+        vm.import(uris, location.currentId)
     }
     val saveLog = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         vm.endExternalUi()
@@ -171,7 +207,18 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Uni
         vm.events.collect { e ->
             when (e) {
                 is HomeEvent.Message -> scope.launch { snackbar.showSnackbar(e.text) }
-                is HomeEvent.PickAccount -> pickAccount.launch(
+                is HomeEvent.LaunchConsent -> consent.launch(IntentSenderRequest.Builder(e.pendingIntent.intentSender).build())
+            }
+        }
+    }
+    LaunchedEffect(Unit) {
+        foldersVm.messages.collect { scope.launch { snackbar.showSnackbar(it) } }
+    }
+    LaunchedEffect(Unit) {
+        driveVm.events.collect { e ->
+            when (e) {
+                is DriveEvent.Message -> scope.launch { snackbar.showSnackbar(e.text) }
+                is DriveEvent.PickAccount -> pickAccount.launch(
                     com.google.android.gms.common.AccountPicker.newChooseAccountIntent(
                         com.google.android.gms.common.AccountPicker.AccountChooserOptions.Builder()
                             .setAllowableAccountsTypes(listOf("com.google"))
@@ -179,7 +226,7 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Uni
                             .build(),
                     ),
                 )
-                is HomeEvent.LaunchConsent -> consent.launch(IntentSenderRequest.Builder(e.pendingIntent.intentSender).build())
+                is DriveEvent.LaunchConsent -> consent.launch(IntentSenderRequest.Builder(e.pendingIntent.intentSender).build())
             }
         }
     }
@@ -189,18 +236,26 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Uni
         user = user,
         files = files,
         ui = ui,
+        driveBusy = drive.busy,
         snackbar = snackbar,
         loadThumb = vm::thumbnail,
         onAccount = { showAccount = true },
         onLock = vm::lock,
         onSync = { vm.sync() },
-        onConnect = vm::connectDrive,
+        onConnect = driveVm::connect,
         onUpload = {
-            if (user?.driveUserFolderId == null) scope.launch { snackbar.showSnackbar("Əvvəlcə Google Drive-a qoşulun") }
+            if (user?.isDriveReady != true) scope.launch { snackbar.showSnackbar("Əvvəlcə Google Drive-a qoşulun") }
             else showPicker = true
         },
         onOpen = onOpen,
         onRetry = vm::retry,
+        onProblems = { showProblems = true },
+        folders = location,
+        folderActions = FolderActions(
+            onOpen = foldersVm::open,
+            onMenu = { menuFolder = it },
+            onCreate = foldersVm::showCreate,
+        ),
         selection = selection,
         selectionActions = SelectionActions(
             onToggle = vm::toggleSelect,
@@ -210,6 +265,7 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Uni
             onDownload = { confirmDownload = true },
             onDelete = { confirmDelete = true },
             onInfo = { showInfo = true },
+            onMove = { foldersVm.showMove(selection.ids) },
         ),
     )
 
@@ -283,19 +339,53 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Uni
         }
     }
 
+    menuFolder?.let { f ->
+        FolderActionsDialog(
+            f,
+            onRename = { menuFolder = null; foldersVm.showRename(f) },
+            onDelete = { menuFolder = null; foldersVm.showDelete(f) },
+            onDismiss = { menuFolder = null },
+        )
+    }
+    when (val d = folderUi.dialog) {
+        FolderDialog.Create -> FolderNameDialog("Yeni qovluq", "", folderUi.busy, folderUi.error, foldersVm::create, foldersVm::dismiss)
+        is FolderDialog.Rename -> FolderNameDialog("Adını dəyiş", d.folder.name, folderUi.busy, folderUi.error, foldersVm::rename, foldersVm::dismiss)
+        is FolderDialog.Delete -> DeleteFolderDialog(d.folder, d.contents, folderUi.busy, folderUi.error, foldersVm::delete, foldersVm::dismiss)
+        is FolderDialog.Move -> MoveToFolderDialog(
+            location.all, d.fileIds.size, folderUi.busy, folderUi.error,
+            onMove = { target -> foldersVm.move(target, onDone = vm::clearSelection) }, onDismiss = foldersVm::dismiss,
+        )
+        null -> Unit
+    }
+
+    if (showProblems) {
+        val problems = files.orEmpty().problems()
+        if (problems.isEmpty()) showProblems = false
+        ModalBottomSheet(onDismissRequest = { showProblems = false }, sheetState = rememberModalBottomSheetState(), containerColor = EColors.Bg2) {
+            ProblemFilesSheet(
+                problems = problems,
+                onRetry = vm::retry,
+                onRetryAll = vm::retryAll,
+                onSaveCopy = { id -> showProblems = false; vm.selectOnly(id); confirmDownload = true },
+                onDelete = vm::deleteLocal,
+            )
+        }
+    }
+
     if (showAccount) {
         ModalBottomSheet(onDismissRequest = { showAccount = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = EColors.Bg2) {
             AccountSheetContent(
                 username = vm.username,
                 user = user,
                 files = files.orEmpty(),
-                driveBusy = ui.driveBusy,
+                driveBusy = drive.busy,
                 syncing = ui.syncing,
-                biometricAvailable = vm.biometricAvailable,
-                onConnect = vm::connectDrive,
-                onDisconnect = vm::disconnectDrive,
+                biometricAvailable = driveVm.biometricAvailable,
+                onConnect = driveVm::connect,
+                onDisconnect = { showAccount = false; driveVm.requestDisconnect() },
                 onSync = { vm.sync() },
-                onBiometric = { on -> if (on) vm.enableBiometric(activity) else vm.disableBiometric() },
+                onBiometric = { on -> driveVm.setBiometric(activity, on) },
+                onChangeKey = { showAccount = false; driveVm.startKeyChange() },
                 onLock = { showAccount = false; vm.lock() },
                 onExportLog = {
                     vm.beginExternalUi()
@@ -305,11 +395,24 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Uni
         }
     }
 
-    ui.remoteVault?.let {
-        RemoteVaultDialog(
-            busy = ui.driveBusy, error = ui.remotePasswordError,
-            onSubmit = vm::submitRemotePassword, onCancel = vm::cancelRemotePassword,
+    drive.prompt?.let { prompt ->
+        // key(prompt) — hər yeni sorğuda sahələr sıfırlanır
+        androidx.compose.runtime.key(prompt) {
+            SecurityKeyDialog(prompt, drive.busy, drive.promptError, onSubmit = driveVm::submitKey, onCancel = driveVm::cancelPrompt)
+        }
+    }
+    if (drive.keyDocumentPending) {
+        KeyDocumentDialog(
+            savedAs = drive.keyDocumentSavedAs,
+            onSave = {
+                driveVm.beginExternalUi()
+                saveKeyPdf.launch("eDrive-tehlukesizlik-acari.pdf")
+            },
+            onClose = driveVm::closeKeyDocument,
         )
+    }
+    drive.disconnectUnsynced?.let { n ->
+        DisconnectDialog(n, onConfirm = driveVm::disconnect, onCancel = driveVm::cancelDisconnect)
     }
 }
 
@@ -320,6 +423,7 @@ fun HomeContent(
     user: UserEntity?,
     files: List<FileEntity>?,
     ui: HomeUi,
+    driveBusy: Boolean = false,
     snackbar: SnackbarHostState,
     loadThumb: suspend (String) -> ImageBitmap?,
     onAccount: () -> Unit,
@@ -329,12 +433,16 @@ fun HomeContent(
     onUpload: () -> Unit,
     onOpen: (String) -> Unit,
     onRetry: (String) -> Unit,
+    onProblems: () -> Unit = {},
+    folders: FolderLocation = FolderLocation(),
+    folderActions: FolderActions = FolderActions(),
     selection: SelectionState = SelectionState(),
     selectionActions: SelectionActions = SelectionActions(),
 ) {
-    val connected = user?.driveUserFolderId != null
+    val connected = user?.isDriveReady == true
     var filter by rememberSaveable(stateSaver = FileFilterSaver) { mutableStateOf(FileFilter()) }
-    val list = files.orEmpty()
+    val all = files.orEmpty()
+    val list = remember(all, folders.currentId) { all.filter { it.folderId == folders.currentId } }
     val shown = remember(list, filter) { applyFilter(list, filter) }
     val busy = ui.batch != null
     Scaffold(
@@ -353,6 +461,9 @@ fun HomeContent(
                     actions = {
                         IconButton(onClick = { selectionActions.onSelectAll(shown.map { it.id }) }, enabled = !busy && shown.isNotEmpty()) {
                             Icon(Icons.Outlined.SelectAll, "Hamısını seç", tint = EColors.Muted)
+                        }
+                        if (connected) IconButton(onClick = selectionActions.onMove, enabled = n > 0 && !busy) {
+                            Icon(Icons.AutoMirrored.Outlined.DriveFileMove, "Qovluğa köçür", tint = if (n > 0 && !busy) EColors.Muted else EColors.Faint)
                         }
                         if (n == 1) IconButton(onClick = selectionActions.onInfo, enabled = !busy) { Icon(Icons.Outlined.Info, "Məlumat", tint = EColors.Muted) }
                         IconButton(onClick = selectionActions.onDownload, enabled = n > 0 && !busy) {
@@ -385,6 +496,17 @@ fun HomeContent(
                     }
                 },
                 actions = {
+                    val problemCount = remember(list) { list.problems().size }
+                    if (problemCount > 0) {
+                        IconButton(onClick = onProblems) {
+                            BadgedBox(badge = { androidx.compose.material3.Badge(containerColor = EColors.Danger) { Text("$problemCount") } }) {
+                                Icon(Icons.Outlined.WarningAmber, "Problemli fayllar", tint = EColors.Amber)
+                            }
+                        }
+                    }
+                    if (connected) {
+                        IconButton(onClick = folderActions.onCreate) { Icon(Icons.Outlined.CreateNewFolder, "Yeni qovluq", tint = EColors.Muted) }
+                    }
                     if (list.isNotEmpty()) {
                         IconButton(onClick = selectionActions.onStart) { Icon(Icons.Outlined.CheckCircle, "Seç", tint = EColors.Muted) }
                     }
@@ -423,12 +545,20 @@ fun HomeContent(
                 }
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
-                SummaryHeader(list, connected, username)
+                SummaryHeader(all, connected)
+            }
+            if (connected && (folders.current != null || folders.children.isNotEmpty())) {
+                item(span = { GridItemSpan(maxLineSpan) }) { Breadcrumb(folders.path, folderActions.onOpen) }
+            }
+            if (!selection.active) {
+                items(folders.children, key = { "folder-" + it.id }) { f ->
+                    FolderTile(f, onClick = { folderActions.onOpen(f.id) }, onLongClick = { folderActions.onMenu(f) })
+                }
             }
             if (!connected) {
-                item(span = { GridItemSpan(maxLineSpan) }) { ConnectCard(ui.driveBusy, onConnect) }
+                item(span = { GridItemSpan(maxLineSpan) }) { ConnectCard(driveBusy, onConnect) }
             }
-            if (files != null && list.isEmpty() && connected) {
+            if (files != null && list.isEmpty() && folders.children.isEmpty() && connected) {
                 item(span = { GridItemSpan(maxLineSpan) }) { EmptyState() }
             }
             if (list.isNotEmpty() && shown.isEmpty()) {
@@ -451,7 +581,7 @@ fun HomeContent(
 }
 
 @Composable
-private fun SummaryHeader(files: List<FileEntity>, connected: Boolean, username: String) {
+private fun SummaryHeader(files: List<FileEntity>, connected: Boolean) {
     Column(Modifier.padding(bottom = 10.dp, top = 4.dp)) {
         Text("Şifrəli fayllar", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(4.dp))
@@ -460,7 +590,7 @@ private fun SummaryHeader(files: List<FileEntity>, connected: Boolean, username:
         Text(
             buildString {
                 append("${files.size} fayl · ${formatBytes(total)}")
-                if (connected) append(" · ${DriveLayout.ROOT_FOLDER}/$username")
+                if (connected) append(" · ${DriveLayout.ROOT_FOLDER}")
                 if (pending > 0) append(" · $pending növbədə")
             },
             color = EColors.Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -640,28 +770,4 @@ private fun ChooserRow(icon: ImageVector, title: String, subtitle: String, onCli
             Text(subtitle, color = EColors.Muted, fontSize = 13.sp)
         }
     }
-}
-
-@Composable
-private fun RemoteVaultDialog(busy: Boolean, error: String?, onSubmit: (String) -> Unit, onCancel: () -> Unit) {
-    var pw by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = {},
-        containerColor = EColors.Bg2,
-        title = { Text("Drive-da mövcud vault tapıldı") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "Bu Google hesabında bu istifadəçi adı ilə əvvəllər yaradılmış şifrəli fayllar var. " +
-                        "Onları açmaq üçün həmin vault-un parolunu daxil edin.",
-                    color = EColors.Muted, fontSize = 14.sp,
-                )
-                EField(pw, { pw = it }, "Vault parolu", Icons.Outlined.Lock, password = true, isError = error != null)
-                if (error != null) Text(error, color = EColors.Danger, fontSize = 13.sp)
-                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = EColors.Accent)
-            }
-        },
-        confirmButton = { TextButton(onClick = { onSubmit(pw) }, enabled = !busy && pw.length >= 8) { Text("Aç", color = EColors.Accent) } },
-        dismissButton = { TextButton(onClick = onCancel, enabled = !busy) { Text("Ləğv et", color = EColors.Muted) } },
-    )
 }

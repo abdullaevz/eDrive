@@ -53,7 +53,7 @@ class LocalVaultStore @Inject constructor(
         outboxMeta(f.userId, f.id).delete()
         cachedBlob(f.id).delete()
         thumbCache.remove(f.id)
-        files.delete(f.id)
+        files.delete(f.userId, f.id)
     }
 
     /**
@@ -94,5 +94,5 @@ class LocalVaultStore @Inject constructor(
 }
 
 /** Progress callback-lər sinxron koddan (şifrələmə/yükləmə döngüsündən) çağırılır. */
-internal fun FileDao.setStatusBlocking(id: String, status: FileStatus, progress: Float) =
-    runBlocking { setStatus(id, status, progress) }
+internal fun FileDao.setStatusBlocking(userId: Long, id: String, status: FileStatus, progress: Float) =
+    runBlocking { setStatus(userId, id, status, progress) }

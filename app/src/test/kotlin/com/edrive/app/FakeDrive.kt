@@ -17,7 +17,7 @@ import java.io.InputStream
  */
 class FakeDrive(private val email: String = "natiq@gmail.com") : DriveClient, DriveClientProvider, DriveAuthorizer {
 
-    class Node(val id: String, val name: String, val parent: String?, val folder: Boolean, var bytes: ByteArray)
+    class Node(val id: String, val name: String, var parent: String?, val folder: Boolean, var bytes: ByteArray)
 
     val nodes = linkedMapOf<String, Node>()
     val revoked = mutableListOf<String>()
@@ -45,6 +45,22 @@ class FakeDrive(private val email: String = "natiq@gmail.com") : DriveClient, Dr
     override suspend fun ensureFolder(name: String, parentId: String?): String =
         findByName(name, parentId, folder = true)?.id ?: create(name, parentId, true, ByteArray(0)).id
 
+    override suspend fun createFolder(name: String, parentId: String?) = create(name, parentId, true, ByteArray(0)).toFile()
+
+    override suspend fun rename(fileId: String, name: String) {
+        val n = nodes.getValue(fileId)
+        nodes[fileId] = Node(n.id, name, n.parent, n.folder, n.bytes)
+    }
+
+    /** Zibil: qovluq və bütün nəsilləri görünməz olur (burada sadəcə [trashed]-ə köçürülür). */
+    val trashed = linkedMapOf<String, Node>()
+
+    override suspend fun trash(fileId: String) {
+        val n = nodes.remove(fileId) ?: return
+        trashed[fileId] = n
+        nodes.values.filter { it.parent == fileId }.map { it.id }.forEach { trash(it) }
+    }
+
     override suspend fun listChildren(parentId: String) = nodes.values.filter { it.parent == parentId }.map { it.toFile() }
 
     override suspend fun uploadSmall(name: String, parentId: String, bytes: ByteArray, mime: String, existingId: String?): DriveFile {
@@ -57,6 +73,12 @@ class FakeDrive(private val email: String = "natiq@gmail.com") : DriveClient, Dr
         return create(name, parentId, false, file.readBytes()).toFile()
     }
 
+    override suspend fun move(fileId: String, fromParentId: String, toParentId: String) {
+        val n = nodes.getValue(fileId)
+        check(n.parent == fromParentId) { "Fayl $fromParentId qovluğunda deyil" }
+        n.parent = toParentId
+    }
+
     override suspend fun download(fileId: String): InputStream = ByteArrayInputStream(nodes.getValue(fileId).bytes)
 
     override suspend fun delete(fileId: String) { nodes.remove(fileId) }
@@ -64,15 +86,8 @@ class FakeDrive(private val email: String = "natiq@gmail.com") : DriveClient, Dr
     private fun create(name: String, parent: String?, folder: Boolean, bytes: ByteArray) =
         Node("drive-${++seq}", name, parent, folder, bytes).also { nodes[it.id] = it }
 
-    private fun Node.toFile() = DriveFile(id, name, bytes.size.toString())
+    fun folder(name: String, parent: String?) = create(name, parent, true, ByteArray(0))
+
+    private fun Node.toFile() = DriveFile(id, name, bytes.size.toString(), if (folder) DriveClient.FOLDER_MIME else DriveClient.OCTET)
 }
 
-/** Robolectric-də Android Keystore yoxdur — barmaq izi üçün saxta implementasiya. */
-class FakeBiometric : com.edrive.app.security.BiometricKeyStore {
-    override fun isAvailable() = false
-    override suspend fun enroll(activity: androidx.fragment.app.FragmentActivity, userId: Long, dek: ByteArray) =
-        com.edrive.app.security.BiometricKeyStore.Wrapped(ByteArray(12), dek.copyOf())
-    override suspend fun unlock(activity: androidx.fragment.app.FragmentActivity, userId: Long, wrapped: com.edrive.app.security.BiometricKeyStore.Wrapped) =
-        wrapped.ciphertext.copyOf()
-    override fun deleteKey(userId: Long) {}
-}

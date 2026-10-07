@@ -2,7 +2,6 @@ package com.edrive.app.data.db.entity
 
 import androidx.room.Entity
 import androidx.room.Index
-import androidx.room.PrimaryKey
 
 /**
  * Faylın həyat dövrü: şifrələnir → növbədə → yüklənir → Drive-da (və ya xəta).
@@ -10,9 +9,17 @@ import androidx.room.PrimaryKey
  */
 enum class FileStatus { ENCRYPTING, PENDING, UPLOADING, SYNCED, FAILED, LOCAL }
 
-@Entity(tableName = "files", indices = [Index("userId")])
+/**
+ * [id] faylın sabit ID-sidir (Drive-da `<id>.edrv` / `<id>.meta` adlarında və şifrələmə AAD-ində işlənir).
+ * Eyni Drive-a qoşulan bir neçə lokal hesab ola bildiyi üçün açar (userId, id)-dir.
+ */
+@Entity(
+    tableName = "files",
+    primaryKeys = ["userId", "id"],
+    indices = [Index("userId", "folderId")],
+)
 data class FileEntity(
-    @PrimaryKey val id: String,
+    val id: String,
     val userId: Long,
     val name: String,
     val mimeType: String,
@@ -26,4 +33,6 @@ data class FileEntity(
     val error: String? = null,
     val driveDataId: String? = null,
     val driveMetaId: String? = null,
+    /** Drive qovluq ID-si; `null` = "eDrive Storage" kökü. */
+    val folderId: String? = null,
 )

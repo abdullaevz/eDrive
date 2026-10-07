@@ -14,12 +14,16 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import com.edrive.app.data.db.entity.FileEntity
 import com.edrive.app.data.db.entity.FileStatus
+import com.edrive.app.data.db.entity.FolderEntity
 import com.edrive.app.data.db.entity.UserEntity
+import com.edrive.app.ui.folders.FolderLocation
+import com.edrive.app.ui.auth.AuthActions
 import com.edrive.app.ui.auth.AuthContent
 import com.edrive.app.ui.auth.AuthMode
 import com.edrive.app.ui.auth.AuthState
 import com.edrive.app.ui.auth.KnownUser
 import com.edrive.app.ui.home.AccountSheetContent
+import com.edrive.app.ui.home.ProblemFilesSheet
 import com.edrive.app.ui.home.HomeContent
 import com.edrive.app.ui.home.HomeUi
 import com.edrive.app.ui.theme.EColors
@@ -51,26 +55,26 @@ class ScreenshotTest {
     }
 
     private val noop: () -> Unit = {}
-    private val users = listOf(KnownUser(1, "natiq", true), KnownUser(2, "test", false))
+    private val users = listOf(KnownUser(1, "natiq", biometric = true, legacy = false), KnownUser(2, "köhnə", biometric = false, legacy = true))
 
     @Composable
-    private fun auth(state: AuthState, users: List<KnownUser> = this.users) { AuthContent(
-        state, users, biometricForSelected = true, biometricAvailable = true,
-        onUsername = {}, onPassword = {}, onConfirm = {}, onMode = {}, onLogin = noop, onRegister = noop,
-        onBiometric = noop, onSaveRecovery = noop, onToggleBiometric = {}, onFinish = noop,
-    ) }
+    private fun auth(state: AuthState, users: List<KnownUser> = this.users) = AuthContent(
+        state, users, selected = users.firstOrNull { it.username == state.username }, biometricAvailable = true, actions = AuthActions(),
+    )
 
-    @Test fun login() = shot("1-login") { auth(AuthState(username = "natiq", password = "salam12345")) }
+    @Test fun login() = shot("1-login") { auth(AuthState(username = "natiq", pin = "48")) }
 
     @Test fun register() = shot("2-register") {
-        auth(AuthState(mode = AuthMode.REGISTER, username = "natiq", password = "salam12", confirm = ""), emptyList())
+        auth(AuthState(mode = AuthMode.REGISTER, username = "natiq", pin = "4826", pinConfirm = ""), emptyList())
     }
 
-    @Test fun recovery() = shot("3-recovery") {
-        auth(AuthState(mode = AuthMode.RECOVERY, username = "natiq", password = "salam12345", recoverySavedAs = "eDrive-natiq-berpa.pdf", enableBiometricAfter = true))
+    @Test fun pinDocument() = shot("3-pin-document") {
+        auth(AuthState(mode = AuthMode.PIN_DOCUMENT, username = "natiq", pin = "4826", pinPdfSavedAs = "eDrive-natiq-PIN.pdf", enableBiometricAfter = true))
     }
 
-    private val user = UserEntity(1, "natiq", "{}", 1759600000000, driveEmail = "natiq@gmail.com", driveRootFolderId = "r", driveUserFolderId = "u", bioWrappedDek = ByteArray(1))
+    @Test fun legacyMigration() = shot("3b-legacy") { auth(AuthState(username = "köhnə", legacyPassword = "salam12345")) }
+
+    private val user = UserEntity(1, "natiq", createdAt = 1759600000000, headerJson = "{}", driveEmail = "natiq@gmail.com", driveRootFolderId = "r", biometricEnabled = true)
 
     private fun thumb(seed: Int): ImageBitmap {
         val b = Bitmap.createBitmap(240, 240, Bitmap.Config.ARGB_8888)
@@ -96,15 +100,34 @@ class ScreenshotTest {
     )
 
     @Composable
-    private fun home(user: UserEntity?, files: List<FileEntity>) { HomeContent(
+    private fun home(user: UserEntity?, files: List<FileEntity>, folders: FolderLocation = FolderLocation()) { HomeContent(
         username = "natiq", user = user, files = files, ui = HomeUi(), snackbar = SnackbarHostState(),
         loadThumb = { id -> thumb(id.last().digitToInt()) },
         onAccount = noop, onLock = noop, onSync = noop, onConnect = noop, onUpload = noop, onOpen = {}, onRetry = {},
+        folders = folders,
     ) }
+
+    @Test fun homeFolders() = shot("4b-home-folders") {
+        val docs = FolderEntity("f1", 1, "Sənədlər", null, 0)
+        val trip = FolderEntity("f2", 1, "Səyahət 2026", "f1", 0)
+        val tax = FolderEntity("f3", 1, "Vergi", "f1", 0)
+        home(user, files.map { it.copy(folderId = "f1") }.take(3), FolderLocation(docs, listOf(docs), listOf(trip, tax), listOf(docs, trip, tax)))
+    }
 
     @Test fun homeGallery() = shot("4-home") { home(user, files) }
 
-    @Test fun homeNotConnected() = shot("5-home-not-connected") { home(user.copy(driveUserFolderId = null, driveEmail = null), emptyList()) }
+    @Test fun homeNotConnected() = shot("5-home-not-connected") { home(user.copy(driveRootFolderId = null, driveEmail = null), emptyList()) }
+
+    @Test fun problemFiles() = shot("11-problems") {
+        ProblemFilesSheet(
+            listOf(
+                files[0].copy(status = FileStatus.FAILED, error = "Drive xətası 500"),
+                files[1].copy(status = FileStatus.PENDING, error = "Şəbəkə xətası — yenidən cəhd ediləcək"),
+                files[2].copy(status = FileStatus.FAILED, error = "⛔ Lokal şifrəli nüsxə tapılmadı"),
+            ),
+            onRetry = {}, onRetryAll = noop, onSaveCopy = {}, onDelete = {},
+        )
+    }
 
     @Test fun accountSheet() = shot("6-account") {
         AccountSheetContent("natiq", user, files, driveBusy = false, syncing = false, biometricAvailable = true,

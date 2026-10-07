@@ -74,3 +74,4 @@ class SelectionTest {
     @Test fun infoRowsOmitDimensionsWhenUnknown() =
         assertFalse(fileInfoRows(f("x"), Locale.US).any { it.first == "Ölçülər" })
 }
+

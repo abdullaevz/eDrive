@@ -84,6 +84,19 @@ class VaultTest {
         assertThrows(AuthenticationFailedException::class.java) { keys.unlock(created.header, "other-pass".toCharArray()) }
     }
 
+    @Test fun rewrapKeepsDekWithNewSalt() {
+        val created = keys.create("old-password".toCharArray(), "2026-10-05T00:00:00Z", FAST)
+        val changed = keys.rewrap(created.header, "old-password".toCharArray(), "new-password".toCharArray())
+        assertArrayEquals(created.dek, keys.unlock(changed, "new-password".toCharArray()))
+        assertEquals(created.header.keyId, changed.keyId)
+        assertEquals(created.header.createdAt, changed.createdAt)
+        assertNotEquals(created.header.kdf.salt, changed.kdf.salt)
+        assertThrows(AuthenticationFailedException::class.java) { keys.unlock(changed, "old-password".toCharArray()) }
+        assertThrows(AuthenticationFailedException::class.java) {
+            keys.rewrap(created.header, "wrong".toCharArray(), "x".toCharArray())
+        }
+    }
+
     @Test fun argon2MatchesRfc9106Style() {
         // Eyni giriş həmişə eyni açarı verməlidir (determinizm)
         val salt = ByteArray(16) { it.toByte() }
