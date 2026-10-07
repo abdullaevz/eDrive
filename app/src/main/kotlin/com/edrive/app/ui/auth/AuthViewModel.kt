@@ -38,6 +38,8 @@ data class AuthState(
     val error: String? = null,
     val recoverySavedAs: String? = null,
     val enableBiometricAfter: Boolean = false,
+    /** Bərpa PDF-ini saxlamaq (defolt: bəli). İstifadəçi söndürə bilər. */
+    val saveRecoveryPdf: Boolean = true,
 )
 
 @HiltViewModel
@@ -61,13 +63,13 @@ class AuthViewModel @Inject constructor(
     val biometricAvailable: Boolean get() = biometric.isAvailable()
 
     private var pending: AccountRepository.PendingAccount? = null
-    private var autoPrompted = false
 
     fun setMode(m: AuthMode) = _state.update { it.copy(mode = m, error = null, password = "", confirm = "") }
     fun setUsername(v: String) = _state.update { it.copy(username = v.trim(), error = null) }
     fun setPassword(v: String) = _state.update { it.copy(password = v, error = null) }
     fun setConfirm(v: String) = _state.update { it.copy(confirm = v, error = null) }
     fun setEnableBiometric(v: Boolean) = _state.update { it.copy(enableBiometricAfter = v) }
+    fun setSaveRecoveryPdf(v: Boolean) = _state.update { it.copy(saveRecoveryPdf = v) }
 
     fun login() = launchBusy {
         val s = _state.value
@@ -113,13 +115,18 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    /** Ekran açılanda son istifadəçinin barmaq izi aktivdirsə, avtomatik soruşulur (bir dəfə). */
-    fun maybeAutoBiometric(activity: FragmentActivity) {
-        if (autoPrompted || _state.value.mode != AuthMode.LOGIN) return
-        val last = users.value?.firstOrNull() ?: return
-        autoPrompted = true
-        if (_state.value.username.isEmpty()) _state.update { it.copy(username = last.username) }
-        if (last.biometric && biometricAvailable) biometricLogin(activity, last.id)
+    /**
+     * Giriş ekranı hər dəfə görünəndə (soyuq start, kilid, fondan qayıdış) çağırılır:
+     * seçilmiş (yoxsa son) hesabda barmaq izi aktivdirsə, əvvəlcə o soruşulur.
+     * İstifadəçi "Parol ilə" seçərsə, ekran yenidən açılana qədər təkrar soruşulmur.
+     */
+    fun autoBiometric(activity: FragmentActivity) {
+        val s = _state.value
+        if (s.mode != AuthMode.LOGIN || s.busy) return
+        val list = users.value ?: return
+        val target = list.firstOrNull { it.username.equals(s.username, ignoreCase = true) } ?: list.firstOrNull() ?: return
+        if (s.username.isEmpty()) _state.update { it.copy(username = target.username) }
+        if (target.biometric && biometricAvailable) biometricLogin(activity, target.id)
     }
 
     fun prefillLastUser() {

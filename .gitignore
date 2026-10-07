@@ -20,3 +20,6 @@ release*.keystore
 *.apk
 *.aab
 _to_delete/
+
+# Release build çıxışı (mapping.txt hər buraxılış üçün ayrıca saxlanılır)
+/app/release/

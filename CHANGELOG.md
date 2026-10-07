@@ -7,6 +7,11 @@ Format [Keep a Changelog](https://keepachangelog.com/) əsasındadır. Versiya n
 ### Əlavə olundu
 - Tətbiqdaxili video pleyer: video şifrəli halda endirilir və yaddaşda (RAM) deşifrə olunub oynadılır, diskə açıq mətn yazılmır. Axtarış (seek), ±10 san, qoşa toxunuşla irəli/geri, tam ekran səthi. Dəstəklənməyən codec üçün "Kənar tətbiqdə aç" ehtiyatı qalır.
 - Ana ekranın başında süzgəc: yan-yana "Şəkil" və "Video" düymələri. Seçiləndə ona uyğun seçimlər açılır: format (JPG, PNG, MP4, MOV…), yönəliş (üfüqi/şaquli) və sıralama (tarix, ölçü, ad).
+- Çoxlu seçim: "Seç" düyməsi və ya fayla uzun basma. Toplu endirmə (şəkil/video qalereyaya, digərləri seçilən qovluğa) və toplu "Drive-dan sil": fayl Drive-dan silinir, şifrəli nüsxə cihazda qalır (yeni "yalnız cihazda" statusu, sinxronizasiya ona toxunmur). Gedişi göstərən panel, "hamısını seç", geri düyməsi ilə çıxış.
+- Tətbiqdaxili qalereya ("Yüklə" → "Qalereya"): icazə verildikdən sonra telefonun bütün albomlarındakı şəkil və videolar albom üzrə görünür, toplu seçilib şifrələnir. Android 14-də "yalnız seçilmiş şəkillər" rejimi dəstəklənir. Yer məlumatı icazəsi verilibsə, şəkillər GPS/EXIF-i silinmədən olduğu kimi şifrələnir. İş profili (Work) faylları admin siyasətinə görə əlçatan olmaya bilər.
+- Fayl məlumatı: baxış ekranındakı və seçim rejimindəki "Məlumat" düyməsi (ad, növ, ölçü, piksel ölçüləri, tarix, vəziyyət, şifrələmə, şifrəli ölçü, ID).
+- Qeydiyyatda bərpa sənədini (PDF) saxlamaq ixtiyaridir (defolt: açıq).
+- Giriş ekranı hər dəfə görünəndə (soyuq start, kilid, fondan qayıdış) barmaq izi sorğusu avtomatik açılır.
 - `crypto`: `RandomAccessDecryptor` — `.edrv` formatını dəyişmədən ixtiyari mövqedən deşifrə (kəsilmə, dəyişdirmə və əlavə edilmiş baytlar aşkarlanır).
 
 ### Dəyişdi

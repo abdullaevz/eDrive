@@ -18,6 +18,7 @@ import com.edrive.app.data.Session
 import com.edrive.app.data.db.dao.FileDao
 import com.edrive.app.data.db.dao.UserDao
 import com.edrive.app.data.db.entity.FileEntity
+import com.edrive.app.data.db.entity.FileStatus
 import com.edrive.app.drive.DriveClientProvider
 import com.edrive.crypto.CryptoException
 import com.edrive.crypto.FileCiphertextSource
@@ -117,6 +118,15 @@ class FileAccessService @Inject constructor(
         }
     }
 
+    /** Deşifrə olunmuş faylı istifadəçinin seçdiyi qovluğa (SAF ağacı) yazır; ad toqquşsa sistem özü nömrələyir. */
+    suspend fun exportToFolder(id: String, tree: Uri, onProgress: (Float) -> Unit = {}) = withContext(Dispatchers.IO) {
+        val f = files.get(id) ?: error("Fayl tapılmadı")
+        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        val target = DocumentsContract.createDocument(context.contentResolver, parent, f.mimeType, f.name)
+            ?: error("Qovluqda fayl yaradılmadı")
+        exportTo(id, target, onProgress)
+    }
+
     /**
      * Şəkil və videoları birbaşa qalereyaya (Pictures/eDrive, Movies/eDrive) yazır. Android 10+ — icazə tələb etmir.
      * @return qalereyadakı qovluq adı (istifadəçiyə göstərmək üçün)
@@ -172,6 +182,38 @@ class FileAccessService @Inject constructor(
         } finally {
             dek.wipe()
         }
+    }
+
+    /**
+     * Faylı yalnız Google Drive-dan silir, şifrəli nüsxəni telefonda saxlayır (status [FileStatus.LOCAL]).
+     * Ardıcıllıq təhlükəsizlik üçündür: əvvəl şifrəli nüsxə daimi yerə (outbox, keş deyil) yazılır,
+     * sonra status LOCAL olur (sinxronizasiya silməsin), yalnız bundan sonra Drive-dan silinir.
+     * İlk Drive sorğusu alınmazsa (məs. şəbəkə yoxdur) status geri qaytarılır.
+     */
+    suspend fun removeFromDriveKeepLocal(id: String, onProgress: (Float) -> Unit = {}) = withContext(Dispatchers.IO) {
+        val f = files.get(id) ?: return@withContext
+        if (f.status != FileStatus.SYNCED) return@withContext
+        val email = users.byId(f.userId)?.driveEmail ?: throw IllegalStateException("Google Drive-a qoşulun")
+        val src = ciphertextFile(f, onProgress) // lazım olsa Drive-dan endirilir
+        val keep = store.outboxData(f.userId, f.id)
+        if (src.absolutePath != keep.absolutePath) {
+            val tmp = File(keep.path + ".part")
+            src.copyTo(tmp, overwrite = true)
+            if (!tmp.renameTo(keep)) { tmp.copyTo(keep, overwrite = true); tmp.delete() }
+        }
+        val chunk = keep.inputStream().use { StreamingCipher.readHeader(it).chunkSize }
+        check(keep.length() == StreamingCipher.ciphertextSize(f.size, chunk)) { "Şifrəli nüsxə tam deyil — Drive-dan silinmədi" }
+        files.setStatus(f.id, FileStatus.LOCAL, 1f)
+        val api = drives.forAccount(email)
+        try {
+            f.driveMetaId?.let { api.delete(it) }
+        } catch (e: Exception) {
+            files.setStatus(f.id, FileStatus.SYNCED, 1f) // heç nə silinməyib — əvvəlki vəziyyət
+            throw e
+        }
+        f.driveDataId?.let { api.delete(it) } // alınmasa: status LOCAL qalır, Drive-da yetim şifrəli data ola bilər
+        files.clearDriveIds(f.id)
+        store.cachedBlob(f.id).delete() // artıq outbox-dakı nüsxə var — təkrar saxlamırıq
     }
 
     /** Faylı həm Drive-dan, həm telefondan silir. */

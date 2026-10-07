@@ -39,6 +39,9 @@ interface FileDao {
     @Query("UPDATE files SET status = 'SYNCED', progress = 1, error = NULL, driveDataId = :dataId, driveMetaId = :metaId WHERE id = :id")
     suspend fun markSynced(id: String, dataId: String, metaId: String)
 
+    @Query("UPDATE files SET driveDataId = NULL, driveMetaId = NULL WHERE id = :id")
+    suspend fun clearDriveIds(id: String)
+
     @Query("DELETE FROM files WHERE id = :id")
     suspend fun delete(id: String)
 }

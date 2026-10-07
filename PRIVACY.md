@@ -15,6 +15,10 @@ Tətbiqin tərtibatçısı **heç bir məlumat toplamır, saxlamır və üçünc
 
 Parol və şifrələmə açarları telefondan kənara göndərilmir. Parol itirilərsə, faylları bərpa etmək mümkün deyil.
 
+## Telefon icazələri (foto və video)
+
+Tətbiqdaxili qalereya üçün Android-in "Foto və video" icazəsi istənilir (və şəkillərin GPS/EXIF məlumatı olduğu kimi qalsın deyə "şəkillərdəki yer məlumatı" icazəsi). İcazə yalnız siz seçdiyiniz fayllar üçün oxuma üçündür: seçmədiyiniz fayllar oxunmur və heç yerə göndərilmir, seçilənlər telefonda şifrələnib yalnız şifrəli halda yüklənir. İcazəyə istəmirsinizsə, Android-in standart seçicisi və "Fayllar" seçimi icazəsiz işləyir. İcazəni istənilən vaxt Android tənzimləmələrindən ləğv edə bilərsiniz.
+
 ## Google icazələri
 
 Tətbiq yalnız `https://www.googleapis.com/auth/drive.file` icazəsini istəyir. Bu icazə tətbiqə yalnız **özünün yaratdığı** fayl və qovluqlara çıxış verir, istifadəçinin digər Drive fayllarına yox. İstifadəçinin e-poçt ünvanı yalnız hansı hesabın qoşulduğunu göstərmək üçün telefonda saxlanılır.

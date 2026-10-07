@@ -60,6 +60,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.edrive.app.data.AccountRepository
 import com.edrive.app.ui.components.Chip
 import com.edrive.app.ui.components.EField
@@ -77,12 +79,15 @@ fun AuthRoute(vm: AuthViewModel = hiltViewModel()) {
 
     LaunchedEffect(loadedUsers) {
         val users = loadedUsers ?: return@LaunchedEffect
-        if (users.isNotEmpty()) {
-            vm.prefillLastUser()
-            vm.maybeAutoBiometric(activity)
-        } else if (state.mode == AuthMode.LOGIN) {
-            vm.setMode(AuthMode.REGISTER)
-        }
+        if (users.isNotEmpty()) vm.prefillLastUser()
+        else if (state.mode == AuthMode.LOGIN) vm.setMode(AuthMode.REGISTER)
+    }
+
+    // Ekran hər dəfə tam aktiv olanda (soyuq start, kilid, fondan qayıdış) barmaq izi sorğusu
+    val usersLoaded = loadedUsers != null
+    LaunchedEffect(usersLoaded) {
+        if (!usersLoaded) return@LaunchedEffect
+        activity.repeatOnLifecycle(Lifecycle.State.RESUMED) { vm.autoBiometric(activity) }
     }
 
     val createPdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
@@ -110,6 +115,7 @@ fun AuthRoute(vm: AuthViewModel = hiltViewModel()) {
             createPdf.launch("eDrive-${state.username}-berpa.pdf")
         },
         onToggleBiometric = vm::setEnableBiometric,
+        onToggleRecoveryPdf = vm::setSaveRecoveryPdf,
         onFinish = { vm.finishRegistration(activity) },
     )
 }
@@ -130,6 +136,7 @@ fun AuthContent(
     onSaveRecovery: () -> Unit,
     onToggleBiometric: (Boolean) -> Unit,
     onFinish: () -> Unit,
+    onToggleRecoveryPdf: (Boolean) -> Unit = {},
 ) {
     Box(
         Modifier.fillMaxSize()
@@ -137,6 +144,11 @@ fun AuthContent(
             .systemBarsPadding().imePadding(),
         contentAlignment = Alignment.Center,
     ) {
+        Text(
+            "github.com/abdullaevz",
+            color = EColors.Faint, fontSize = 12.sp, textAlign = TextAlign.Center,
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top = 12.dp),
+        )
         Column(
             Modifier.widthIn(max = 440.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -158,7 +170,7 @@ fun AuthContent(
                 when (mode) {
                     AuthMode.LOGIN -> LoginForm(state, users, biometricForSelected, onUsername, onPassword, onLogin, onBiometric, onMode)
                     AuthMode.REGISTER -> RegisterForm(state, onUsername, onPassword, onConfirm, onRegister, onMode, hasUsers = users.isNotEmpty())
-                    AuthMode.RECOVERY -> RecoveryStep(state, biometricAvailable, onSaveRecovery, onToggleBiometric, onFinish)
+                    AuthMode.RECOVERY -> RecoveryStep(state, biometricAvailable, onSaveRecovery, onToggleBiometric, onFinish, onToggleRecoveryPdf)
                 }
             }
 
@@ -273,8 +285,10 @@ private fun RecoveryStep(
     onSave: () -> Unit,
     onToggleBiometric: (Boolean) -> Unit,
     onFinish: () -> Unit,
+    onToggleRecoveryPdf: (Boolean) -> Unit,
 ) {
     val saved = state.recoverySavedAs != null
+    val wantPdf = state.saveRecoveryPdf
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(EColors.Surface)
@@ -293,16 +307,34 @@ private fun RecoveryStep(
             KeyValue("İstifadəçi", state.username)
             KeyValue("Parol", "•".repeat(state.password.length.coerceAtMost(16)))
         }
-        if (saved) {
-            InfoBox(Icons.Outlined.CheckCircle, EColors.Accent, "Saxlanıldı: ${state.recoverySavedAs}")
-        }
-        OutlinedButton(
-            onClick = onSave, enabled = !state.busy, shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth().height(52.dp),
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(EColors.Surface).padding(horizontal = 14.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(Icons.Outlined.Download, null, tint = EColors.Accent)
-            Spacer(Modifier.size(8.dp))
-            Text(if (saved) "Yenidən saxla" else "Bərpa sənədini yüklə (PDF)", color = EColors.Text)
+            Text("Bərpa sənədini (PDF) saxla", Modifier.weight(1f).padding(start = 12.dp))
+            Switch(
+                checked = wantPdf, onCheckedChange = onToggleRecoveryPdf, enabled = !state.busy,
+                colors = SwitchDefaults.colors(checkedTrackColor = EColors.Accent, checkedThumbColor = EColors.AccentInk),
+            )
+        }
+        if (wantPdf) {
+            if (saved) {
+                InfoBox(Icons.Outlined.CheckCircle, EColors.Accent, "Saxlanıldı: ${state.recoverySavedAs}")
+            }
+            OutlinedButton(
+                onClick = onSave, enabled = !state.busy, shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+            ) {
+                Icon(Icons.Outlined.Download, null, tint = EColors.Accent)
+                Spacer(Modifier.size(8.dp))
+                Text(if (saved) "Yenidən saxla" else "Bərpa sənədini yüklə (PDF)", color = EColors.Text)
+            }
+        } else {
+            InfoBox(
+                Icons.Outlined.WarningAmber, EColors.Amber,
+                "Sənəd saxlanılmayacaq. Parolu itirsəniz, fayllarınızı heç bir yolla bərpa etmək mümkün olmayacaq.",
+            )
         }
         if (biometricAvailable) {
             Row(
@@ -318,8 +350,8 @@ private fun RecoveryStep(
             }
         }
         ErrorText(state.error)
-        PrimaryButton("Davam et", onFinish, enabled = saved, loading = state.busy)
-        if (!saved) {
+        PrimaryButton("Davam et", onFinish, enabled = saved || !wantPdf, loading = state.busy)
+        if (wantPdf && !saved) {
             Text("Davam etmək üçün əvvəlcə sənədi saxlayın", color = EColors.Faint, fontSize = 12.sp,
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }

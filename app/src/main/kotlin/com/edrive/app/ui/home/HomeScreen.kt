@@ -1,5 +1,6 @@
 package com.edrive.app.ui.home
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,7 +40,14 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CloudQueue
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.FolderZip
@@ -95,6 +104,7 @@ import com.edrive.app.data.db.entity.FileStatus
 import com.edrive.app.data.db.entity.UserEntity
 import com.edrive.app.ui.components.Avatar
 import com.edrive.app.ui.components.EField
+import com.edrive.app.ui.components.FileInfoDialog
 import com.edrive.app.ui.components.PrimaryButton
 import com.edrive.app.ui.components.StatusDot
 import com.edrive.app.ui.findActivity
@@ -104,16 +114,27 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onOpen: (String) -> Unit) {
+fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Unit = {}, onOpen: (String) -> Unit) {
     val user by vm.user.collectAsState()
     val files by vm.files.collectAsState()
     val ui by vm.ui.collectAsState()
+    val selection by vm.selection.collectAsState()
     val context = LocalContext.current
     val activity = context.findActivity()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var showAccount by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    var confirmDownload by remember { mutableStateOf(false) }
+    var showInfo by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = selection.active) { vm.clearSelection() }
+
+    val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        vm.endExternalUi()
+        if (uri != null) vm.downloadSelected(uri)
+    }
 
     val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
         vm.endExternalUi()
@@ -180,11 +201,74 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onOpen: (String) -> 
         },
         onOpen = onOpen,
         onRetry = vm::retry,
+        selection = selection,
+        selectionActions = SelectionActions(
+            onToggle = vm::toggleSelect,
+            onStart = vm::startSelect,
+            onSelectAll = vm::selectAll,
+            onClear = vm::clearSelection,
+            onDownload = { confirmDownload = true },
+            onDelete = { confirmDelete = true },
+            onInfo = { showInfo = true },
+        ),
     )
+
+    val chosen = files.orEmpty().filter { it.id in selection.ids }
+    val infoFile = chosen.singleOrNull()
+    if (showInfo && infoFile != null) FileInfoDialog(infoFile, onDismiss = { showInfo = false })
+
+    if (confirmDelete) {
+        val removable = chosen.driveRemovable(chosen.map { it.id }.toSet())
+        val skipped = chosen.size - removable.size
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            containerColor = EColors.Bg2,
+            icon = { Icon(Icons.Outlined.Delete, null, tint = EColors.Danger) },
+            title = { Text("${removable.size} fayl Drive-dan silinsin?") },
+            text = {
+                Text(
+                    "Seçilmiş fayllar Google Drive-dan silinəcək. Şifrəli nüsxələri bu cihazda qalacaq " +
+                        "(${formatBytes(removable.sumOf { it.size.coerceAtLeast(0) })} yer tutacaq) və Drive-a yenidən yüklənməyəcək; " +
+                        "Drive-da olmayan nüsxəni başqa cihazdan görmək mümkün olmayacaq. Cihazdakı nüsxəni sonradan faylı açıb silməklə ləğv edə bilərsiniz." +
+                        (if (skipped > 0) "\n\n$skipped fayl Drive-da olmadığı üçün (yüklənir, xətalı və ya artıq yalnız cihazda) keçiləcək." else ""),
+                    color = EColors.Muted,
+                )
+            },
+            confirmButton = { TextButton(enabled = removable.isNotEmpty(), onClick = { confirmDelete = false; vm.deleteSelected() }) { Text("Drive-dan sil", color = EColors.Danger) } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Ləğv et", color = EColors.Muted) } },
+        )
+    }
+
+    if (confirmDownload) {
+        val ready = chosen.exportable(chosen.map { it.id }.toSet())
+        val folder = needsFolder(ready, android.os.Build.VERSION.SDK_INT)
+        AlertDialog(
+            onDismissRequest = { confirmDownload = false },
+            containerColor = EColors.Bg2,
+            icon = { Icon(Icons.Outlined.Download, null, tint = EColors.Accent) },
+            title = { Text("${ready.size} fayl cihaza endirilsin?") },
+            text = {
+                Text(
+                    (if (folder) "Şəkil və videolar qalereyaya, digər fayllar növbəti addımda seçəcəyiniz qovluğa saxlanacaq."
+                    else "Fayllar deşifrə olunub qalereyaya (Pictures/Movies → eDrive) saxlanacaq.") +
+                        "\n\nEndirilən nüsxələr ŞİFRƏSİZ olacaq — telefona çıxışı olan hər kəs onları görə bilər. Drive-dakı şifrəli nüsxələr toxunulmaz qalır.",
+                    color = EColors.Muted,
+                )
+            },
+            confirmButton = {
+                TextButton(enabled = ready.isNotEmpty(), onClick = {
+                    confirmDownload = false
+                    if (folder) { vm.beginExternalUi(); pickFolder.launch(null) } else vm.downloadSelected(null)
+                }) { Text("Endir", color = EColors.Accent) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDownload = false }) { Text("Ləğv et", color = EColors.Muted) } },
+        )
+    }
 
     if (showPicker) {
         ModalBottomSheet(onDismissRequest = { showPicker = false }, sheetState = rememberModalBottomSheetState(), containerColor = EColors.Bg2) {
             UploadChooser(
+                onGallery = { showPicker = false; onGallery() },
                 onMedia = {
                     showPicker = false
                     vm.beginExternalUi()
@@ -245,14 +329,41 @@ fun HomeContent(
     onUpload: () -> Unit,
     onOpen: (String) -> Unit,
     onRetry: (String) -> Unit,
+    selection: SelectionState = SelectionState(),
+    selectionActions: SelectionActions = SelectionActions(),
 ) {
     val connected = user?.driveUserFolderId != null
     var filter by rememberSaveable(stateSaver = FileFilterSaver) { mutableStateOf(FileFilter()) }
+    val list = files.orEmpty()
+    val shown = remember(list, filter) { applyFilter(list, filter) }
+    val busy = ui.batch != null
     Scaffold(
         containerColor = EColors.Bg,
         snackbarHost = { SnackbarHost(snackbar) },
+        bottomBar = { ui.batch?.let { BatchBar(it) } },
         topBar = {
-            TopAppBar(
+            if (selection.active) {
+                val n = selection.ids.size
+                TopAppBar(
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = EColors.Bg),
+                    title = { Text(if (n == 0) "Fayl seçin" else "$n seçildi", fontWeight = FontWeight.SemiBold) },
+                    navigationIcon = {
+                        IconButton(onClick = selectionActions.onClear, enabled = !busy) { Icon(Icons.Outlined.Close, "Seçimi ləğv et", tint = EColors.Muted) }
+                    },
+                    actions = {
+                        IconButton(onClick = { selectionActions.onSelectAll(shown.map { it.id }) }, enabled = !busy && shown.isNotEmpty()) {
+                            Icon(Icons.Outlined.SelectAll, "Hamısını seç", tint = EColors.Muted)
+                        }
+                        if (n == 1) IconButton(onClick = selectionActions.onInfo, enabled = !busy) { Icon(Icons.Outlined.Info, "Məlumat", tint = EColors.Muted) }
+                        IconButton(onClick = selectionActions.onDownload, enabled = n > 0 && !busy) {
+                            Icon(Icons.Outlined.Download, "Cihaza endir", tint = if (n > 0 && !busy) EColors.Accent else EColors.Faint)
+                        }
+                        IconButton(onClick = selectionActions.onDelete, enabled = n > 0 && !busy) {
+                            Icon(Icons.Outlined.Delete, "Sil", tint = if (n > 0 && !busy) EColors.Danger else EColors.Faint)
+                        }
+                    },
+                )
+            } else TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = EColors.Bg),
                 title = {},
                 navigationIcon = {
@@ -274,6 +385,9 @@ fun HomeContent(
                     }
                 },
                 actions = {
+                    if (list.isNotEmpty()) {
+                        IconButton(onClick = selectionActions.onStart) { Icon(Icons.Outlined.CheckCircle, "Seç", tint = EColors.Muted) }
+                    }
                     if (connected) {
                         IconButton(onClick = onSync, enabled = !ui.syncing) {
                             if (ui.syncing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = EColors.Accent)
@@ -285,7 +399,7 @@ fun HomeContent(
             )
         },
         floatingActionButton = {
-            if (connected) {
+            if (connected && !selection.active) {
                 ExtendedFloatingActionButton(
                     onClick = onUpload,
                     icon = { if (ui.importing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = EColors.AccentInk) else Icon(Icons.Outlined.Add, null) },
@@ -296,8 +410,6 @@ fun HomeContent(
             }
         },
     ) { pad ->
-        val list = files.orEmpty()
-        val shown = remember(list, filter) { applyFilter(list, filter) }
         LazyVerticalGrid(
             columns = GridCells.Adaptive(108.dp),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = pad.calculateTopPadding() + 4.dp, bottom = 120.dp),
@@ -323,9 +435,16 @@ fun HomeContent(
                 item(span = { GridItemSpan(maxLineSpan) }) { NoMatches(onReset = { filter = FileFilter() }) }
             }
             items(shown, key = { it.id }) { f ->
-                FileTile(f, loadThumb, onClick = {
-                    if (f.status == FileStatus.FAILED) onRetry(f.id) else onOpen(f.id)
-                })
+                FileTile(
+                    f, loadThumb,
+                    onClick = {
+                        if (selection.active) selectionActions.onToggle(f.id)
+                        else if (f.status == FileStatus.FAILED) onRetry(f.id) else onOpen(f.id)
+                    },
+                    selectionMode = selection.active,
+                    selected = f.id in selection.ids,
+                    onLongClick = { if (!busy) selectionActions.onToggle(f.id) },
+                )
             }
         }
     }
@@ -337,7 +456,7 @@ private fun SummaryHeader(files: List<FileEntity>, connected: Boolean, username:
         Text("Şifrəli fayllar", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(4.dp))
         val total = files.sumOf { it.size.coerceAtLeast(0) }
-        val pending = files.count { it.status != FileStatus.SYNCED }
+        val pending = files.count { it.status != FileStatus.SYNCED && it.status != FileStatus.LOCAL }
         Text(
             buildString {
                 append("${files.size} fayl · ${formatBytes(total)}")
@@ -393,11 +512,19 @@ private fun EmptyState() {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun FileTile(f: FileEntity, loadThumb: suspend (String) -> ImageBitmap?, onClick: () -> Unit) {
+fun FileTile(
+    f: FileEntity,
+    loadThumb: suspend (String) -> ImageBitmap?,
+    onClick: () -> Unit,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onLongClick: () -> Unit = {},
+) {
     val thumb by produceState<ImageBitmap?>(null, f.id, f.hasThumb) { if (f.hasThumb) value = loadThumb(f.id) }
     Box(
         Modifier.aspectRatio(1f).clip(RoundedCornerShape(14.dp)).background(EColors.Surface2)
-            .border(1.dp, EColors.Line, RoundedCornerShape(14.dp)).combinedClickable(onClick = onClick),
+            .border(if (selected) 2.dp else 1.dp, if (selected) EColors.Accent else EColors.Line, RoundedCornerShape(14.dp))
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         val t = thumb
         if (t != null) {
@@ -416,6 +543,26 @@ fun FileTile(f: FileEntity, loadThumb: suspend (String) -> ImageBitmap?, onClick
             }
         }
         StatusOverlay(f)
+        if (selectionMode) {
+            if (selected) Box(Modifier.matchParentSize().background(Color(0x333DDC97)))
+            Box(
+                Modifier.align(Alignment.TopStart).padding(6.dp).size(22.dp).clip(CircleShape)
+                    .background(if (selected) EColors.Accent else Color(0x99070A0E))
+                    .border(1.5.dp, if (selected) EColors.Accent else Color.White, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (selected) Icon(Icons.Outlined.Check, null, tint = EColors.AccentInk, modifier = Modifier.size(14.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun BatchBar(b: BatchProgress) {
+    Column(Modifier.fillMaxWidth().background(EColors.Bg2).navigationBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp)) {
+        Text("${b.label}… ${minOf(b.done + 1, b.total)}/${b.total}", fontSize = 13.sp)
+        Spacer(Modifier.height(8.dp))
+        LinearProgressIndicator(progress = { b.fraction }, color = EColors.Accent, trackColor = EColors.Surface3, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -444,6 +591,7 @@ private fun androidx.compose.foundation.layout.BoxScope.StatusOverlay(f: FileEnt
             Badge(Icons.Outlined.ErrorOutline, EColors.Danger, Modifier.align(Alignment.BottomEnd))
         }
         FileStatus.SYNCED -> Badge(Icons.Outlined.CloudDone, EColors.Accent, Modifier.align(Alignment.BottomEnd))
+        FileStatus.LOCAL -> Badge(Icons.Outlined.CloudOff, EColors.Amber, Modifier.align(Alignment.BottomEnd))
     }
 }
 
@@ -468,10 +616,11 @@ fun typeIcon(f: FileEntity): Pair<ImageVector, Color> {
 }
 
 @Composable
-private fun UploadChooser(onMedia: () -> Unit, onFiles: () -> Unit) {
+private fun UploadChooser(onGallery: () -> Unit, onMedia: () -> Unit, onFiles: () -> Unit) {
     Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 36.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Nə yükləmək istəyirsiniz?", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 6.dp))
-        ChooserRow(Icons.Outlined.PhotoLibrary, "Foto və video", "Qalereyadan seçin — miniatür ilə göstəriləcək", onMedia)
+        ChooserRow(Icons.Outlined.PhotoLibrary, "Qalereya (bütün albomlar)", "Tətbiqin öz qalereyası — bütün qovluqlar, icazə ilə", onGallery)
+        ChooserRow(Icons.Outlined.PhotoLibrary, "Foto və video (sistem seçicisi)", "Android-in standart seçicisi, icazəsiz", onMedia)
         ChooserRow(Icons.Outlined.UploadFile, "Fayllar", "Sənəd, arxiv, PDF və istənilən digər fayl", onFiles)
     }
 }

@@ -4,8 +4,11 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-/** Faylın həyat dövrü: şifrələnir → növbədə → yüklənir → Drive-da (və ya xəta). */
-enum class FileStatus { ENCRYPTING, PENDING, UPLOADING, SYNCED, FAILED }
+/**
+ * Faylın həyat dövrü: şifrələnir → növbədə → yüklənir → Drive-da (və ya xəta).
+ * [LOCAL] — Drive-dan silinib, şifrəli nüsxə yalnız bu cihazdadır (sinxronizasiya ona toxunmur).
+ */
+enum class FileStatus { ENCRYPTING, PENDING, UPLOADING, SYNCED, FAILED, LOCAL }
 
 @Entity(tableName = "files", indices = [Index("userId")])
 data class FileEntity(

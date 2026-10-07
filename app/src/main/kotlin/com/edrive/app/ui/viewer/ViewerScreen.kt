@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -74,7 +75,9 @@ import javax.inject.Inject
 import androidx.lifecycle.viewModelScope
 import com.edrive.app.data.db.entity.FileEntity
 import com.edrive.app.data.db.entity.FileStatus
+import com.edrive.app.ui.components.FileInfoDialog
 import com.edrive.app.ui.components.PrimaryButton
+import com.edrive.app.ui.home.isReady
 import com.edrive.app.ui.home.typeIcon
 import com.edrive.app.ui.theme.EColors
 import com.edrive.app.util.Media
@@ -220,6 +223,7 @@ fun ViewerRoute(vm: ViewerViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmDownload by remember { mutableStateOf(false) }
+    var showInfo by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
     val saveAs = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(file?.mimeType ?: "*/*")) { uri ->
@@ -232,7 +236,7 @@ fun ViewerRoute(vm: ViewerViewModel, onBack: () -> Unit) {
     val isImage = file?.let { it.mimeType.startsWith("image/") } == true
     LaunchedEffect(file?.id, isImage) { if (isImage) vm.loadImage() }
     val isVideo = file?.let { it.mimeType.startsWith("video/") } == true
-    val videoReady = file?.let { it.status == FileStatus.SYNCED || it.status == FileStatus.PENDING } == true
+    val videoReady = file?.isReady() == true
     val videoSource by vm.videoSource.collectAsState()
     LaunchedEffect(file?.id, isVideo, videoReady) { if (isVideo && videoReady) vm.prepareVideo() }
     LaunchedEffect(Unit) {
@@ -251,6 +255,7 @@ fun ViewerRoute(vm: ViewerViewModel, onBack: () -> Unit) {
         onDelete = { confirmDelete = true },
         onOpenExternal = vm::openExternally,
         onDownload = { confirmDownload = true },
+        onInfo = { showInfo = true },
         snackbar = snackbar,
         isVideo = isVideo,
         videoSource = videoSource,
@@ -259,6 +264,9 @@ fun ViewerRoute(vm: ViewerViewModel, onBack: () -> Unit) {
         onVideoState = { pos, playing -> vm.videoPositionMs = pos; vm.videoPlayWhenReady = playing },
         onRetryVideo = vm::prepareVideo,
     )
+
+    val infoFile = file
+    if (showInfo && infoFile != null) FileInfoDialog(infoFile, onDismiss = { showInfo = false })
 
     if (confirmDownload) {
         val toGallery = isMedia && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
@@ -310,6 +318,7 @@ fun ViewerContent(
     onDelete: () -> Unit,
     onOpenExternal: () -> Unit,
     onDownload: () -> Unit = {},
+    onInfo: () -> Unit = {},
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
     isVideo: Boolean = false,
     videoSource: RandomAccessDecryptor? = null,
@@ -320,7 +329,7 @@ fun ViewerContent(
 ) {
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val bmp = ui.bitmap
-        val videoReady = isVideo && file != null && (file.status == FileStatus.SYNCED || file.status == FileStatus.PENDING)
+        val videoReady = isVideo && file != null && file.isReady()
         if (bmp != null) {
             ZoomableImage(bmp)
         } else if (videoReady) {
@@ -374,7 +383,8 @@ fun ViewerContent(
                     Text("${formatBytes(it.size)} · AES-256-GCM", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                 }
             }
-            if (file != null && (file.status == FileStatus.SYNCED || file.status == FileStatus.PENDING)) {
+            if (file != null) IconButton(onClick = onInfo) { Icon(Icons.Outlined.Info, "Məlumat", tint = Color.White) }
+            if (file != null && file.isReady()) {
                 IconButton(onClick = onDownload, enabled = !ui.exporting) {
                     if (ui.exporting) CircularProgressIndicator(Modifier.size(20.dp), color = EColors.Accent, strokeWidth = 2.dp)
                     else Icon(Icons.Outlined.Download, "Cihaza endir", tint = Color.White)
@@ -430,7 +440,7 @@ private fun NonImageBody(file: FileEntity, ui: ViewerUi, onOpen: () -> Unit, onD
         Text(file.name, style = MaterialTheme.typography.titleMedium, color = Color.White, textAlign = TextAlign.Center)
         Text("${file.mimeType} · ${formatBytes(file.size)}", color = EColors.Muted, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
         Spacer(Modifier.height(24.dp))
-        if (file.status != FileStatus.SYNCED && file.status != FileStatus.PENDING) {
+        if (!file.isReady()) {
             Text("Fayl hələ hazırlanır…", color = EColors.Muted)
         } else {
             PrimaryButton("Deşifrə et və aç", onOpen, loading = ui.loading, icon = Icons.Outlined.LockOpen)
