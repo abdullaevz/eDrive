@@ -77,7 +77,7 @@ class VaultFlowTest {
     @Test fun registerLoginLock() = runBlocking {
         registerAndActivate()
         assertEquals("natiq", session.current?.username)
-        val header = db.users().byUsername("natiq")!!.headerJson
+        val header = db.users().byUsername("natiq")!!.headerJson!!
         assertFalse("parol açıq saxlanmamalıdır", header.contains("salam12345"))
 
         session.lock()
@@ -144,8 +144,8 @@ class VaultFlowTest {
 
         // Drive qoşulmayıbsa, növbə gözləyir (fayl itmir)
         uploads.processQueue()
-        assertEquals(FileStatus.PENDING, db.files().get(img.id)!!.status)
-        assertEquals("Google Drive qoşulmayıb", db.files().get(img.id)!!.error)
+        assertEquals(FileStatus.PENDING, db.files().get(userId, img.id)!!.status)
+        assertEquals("Google Drive qoşulmayıb", db.files().get(userId, img.id)!!.error)
 
         // Kilidlənəndə miniatür açılmır
         session.lock()

@@ -95,8 +95,7 @@ class DriveFlowTest {
         val connected = phoneA.connection.finishConnect("token")
         assertEquals(ConnectOutcome.Connected("natiq@gmail.com", 0), connected)
         val root = drive.nodes.values.single { it.name == DriveLayout.ROOT_FOLDER && it.folder }
-        val userFolder = drive.nodes.values.single { it.name == "natiq" && it.parent == root.id }
-        assertNotNull("vault.json Drive-a yazılmalıdır", drive.nodes.values.singleOrNull { it.name == DriveLayout.VAULT_FILE && it.parent == userFolder.id })
+        assertNotNull("vault.json Drive-a yazılmalıdır", drive.nodes.values.singleOrNull { it.name == DriveLayout.VAULT_FILE && it.parent == root.id })
 
         // ---------------- Şifrələ + yüklə
         val photo = samplePhoto()
@@ -150,7 +149,7 @@ class DriveFlowTest {
         phoneB.connection.disconnect()
         assertEquals(listOf("fake-token"), drive.revoked)
         assertEquals("Google-un yadda saxladığı hesab icazəsi də silinməlidir", listOf("natiq@gmail.com"), drive.forgotten)
-        assertNull(phoneB.db.users().byUsername("natiq")!!.driveUserFolderId)
+        assertNull(phoneB.db.users().byUsername("natiq")!!.driveRootFolderId)
 
         phoneA.db.close(); phoneB.db.close()
     }

@@ -196,7 +196,7 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Uni
         onSync = { vm.sync() },
         onConnect = vm::connectDrive,
         onUpload = {
-            if (user?.driveUserFolderId == null) scope.launch { snackbar.showSnackbar("Əvvəlcə Google Drive-a qoşulun") }
+            if (user?.isDriveReady != true) scope.launch { snackbar.showSnackbar("Əvvəlcə Google Drive-a qoşulun") }
             else showPicker = true
         },
         onOpen = onOpen,
@@ -332,7 +332,7 @@ fun HomeContent(
     selection: SelectionState = SelectionState(),
     selectionActions: SelectionActions = SelectionActions(),
 ) {
-    val connected = user?.driveUserFolderId != null
+    val connected = user?.isDriveReady == true
     var filter by rememberSaveable(stateSaver = FileFilterSaver) { mutableStateOf(FileFilter()) }
     val list = files.orEmpty()
     val shown = remember(list, filter) { applyFilter(list, filter) }

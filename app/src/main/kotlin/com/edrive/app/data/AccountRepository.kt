@@ -54,7 +54,7 @@ class AccountRepository @Inject constructor(
     suspend fun login(username: String, password: CharArray) = withContext(Dispatchers.Default) {
         val user = users.byUsername(username.trim()) ?: throw AccountException("Belə istifadəçi bu cihazda tapılmadı")
         val dek = try {
-            vaultKeys.unlock(VaultHeader.fromJson(user.headerJson), password)
+            vaultKeys.unlock(VaultHeader.fromJson(checkNotNull(user.headerJson) { "Vault yoxdur" }), password)
         } catch (e: AuthenticationFailedException) {
             throw AccountException("Parol yanlışdır")
         } finally {
@@ -67,13 +67,13 @@ class AccountRepository @Inject constructor(
 
     suspend fun loginWithBiometric(activity: FragmentActivity, userId: Long) {
         val user = users.byId(userId) ?: throw AccountException("İstifadəçi tapılmadı")
-        val iv = user.bioIv
-        val ct = user.bioWrappedDek
+        val iv = user.deviceIv
+        val ct = user.deviceWrappedDek
         if (iv == null || ct == null) throw AccountException("Barmaq izi bu hesab üçün aktiv deyil")
         val dek = try {
             biometric.unlock(activity, userId, BiometricKeyStore.Wrapped(iv, ct))
         } catch (e: BiometricKeyStore.InvalidatedException) {
-            users.update(user.copy(bioIv = null, bioWrappedDek = null))
+            users.update(user.copy(deviceIv = null, deviceWrappedDek = null, biometricEnabled = false))
             throw AccountException("Barmaq izləri dəyişib — təhlükəsizlik üçün parolla daxil olun və yenidən aktivləşdirin")
         }
         session.unlock(user.id, user.username, dek)
@@ -87,7 +87,7 @@ class AccountRepository @Inject constructor(
         try {
             val wrapped = biometric.enroll(activity, s.userId, dek)
             val user = users.byId(s.userId)!!
-            users.update(user.copy(bioIv = wrapped.iv, bioWrappedDek = wrapped.ciphertext))
+            users.update(user.copy(deviceIv = wrapped.iv, deviceWrappedDek = wrapped.ciphertext, biometricEnabled = true))
         } finally {
             dek.wipe()
         }
@@ -96,7 +96,7 @@ class AccountRepository @Inject constructor(
     suspend fun disableBiometric() {
         val s = session.requireUser()
         biometric.deleteKey(s.userId)
-        users.byId(s.userId)?.let { users.update(it.copy(bioIv = null, bioWrappedDek = null)) }
+        users.byId(s.userId)?.let { users.update(it.copy(deviceIv = null, deviceWrappedDek = null, biometricEnabled = false)) }
     }
 
     /**
@@ -114,12 +114,12 @@ class AccountRepository @Inject constructor(
         }
         val user = users.byId(s.userId)!!
         biometric.deleteKey(user.id)
-        users.update(user.copy(headerJson = remote.toJson(), bioIv = null, bioWrappedDek = null))
+        users.update(user.copy(headerJson = remote.toJson(), deviceIv = null, deviceWrappedDek = null, biometricEnabled = false))
         session.unlock(user.id, user.username, dek)
         dek.wipe()
     }
 
-    suspend fun header(userId: Long): VaultHeader = VaultHeader.fromJson(users.byId(userId)!!.headerJson)
+    suspend fun header(userId: Long): VaultHeader = VaultHeader.fromJson(checkNotNull(users.byId(userId)?.headerJson) { "Vault yoxdur" })
 
     companion object {
         const val MIN_PASSWORD = 8

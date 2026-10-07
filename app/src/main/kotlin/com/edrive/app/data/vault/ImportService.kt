@@ -52,7 +52,7 @@ class ImportService @Inject constructor(
             } catch (e: Exception) {
                 store.outboxData(s.userId, id).delete()
                 store.outboxMeta(s.userId, id).delete()
-                files.setStatus(id, FileStatus.FAILED, error = "Şifrələmə alınmadı: ${e.message}")
+                files.setStatus(s.userId, id, FileStatus.FAILED, error = "Şifrələmə alınmadı: ${e.message}")
             }
         }
         uploads.schedule()
@@ -69,7 +69,7 @@ class ImportService @Inject constructor(
                         val t = System.nanoTime()
                         if (picked.size > 0 && t - lastUpdate > 200_000_000) {
                             lastUpdate = t
-                            files.setStatusBlocking(id, FileStatus.ENCRYPTING, done.toFloat() / picked.size)
+                            files.setStatusBlocking(userId, id, FileStatus.ENCRYPTING, done.toFloat() / picked.size)
                         }
                     }
                 }
@@ -96,7 +96,7 @@ class ImportService @Inject constructor(
         for (f in files.interrupted()) {
             store.outboxData(f.userId, f.id).delete()
             store.outboxMeta(f.userId, f.id).delete()
-            files.setStatus(f.id, FileStatus.FAILED, error = "${LocalVaultStore.PERMANENT} Şifrələmə yarımçıq qaldı — faylı yenidən seçin")
+            files.setStatus(f.userId, f.id, FileStatus.FAILED, error = "${LocalVaultStore.PERMANENT} Şifrələmə yarımçıq qaldı — faylı yenidən seçin")
         }
         store.cleanupPartials()
     }

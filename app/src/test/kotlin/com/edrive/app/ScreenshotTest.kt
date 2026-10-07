@@ -70,7 +70,7 @@ class ScreenshotTest {
         auth(AuthState(mode = AuthMode.RECOVERY, username = "natiq", password = "salam12345", recoverySavedAs = "eDrive-natiq-berpa.pdf", enableBiometricAfter = true))
     }
 
-    private val user = UserEntity(1, "natiq", "{}", 1759600000000, driveEmail = "natiq@gmail.com", driveRootFolderId = "r", driveUserFolderId = "u", bioWrappedDek = ByteArray(1))
+    private val user = UserEntity(1, "natiq", createdAt = 1759600000000, headerJson = "{}", driveEmail = "natiq@gmail.com", driveRootFolderId = "r", biometricEnabled = true)
 
     private fun thumb(seed: Int): ImageBitmap {
         val b = Bitmap.createBitmap(240, 240, Bitmap.Config.ARGB_8888)
@@ -104,7 +104,7 @@ class ScreenshotTest {
 
     @Test fun homeGallery() = shot("4-home") { home(user, files) }
 
-    @Test fun homeNotConnected() = shot("5-home-not-connected") { home(user.copy(driveUserFolderId = null, driveEmail = null), emptyList()) }
+    @Test fun homeNotConnected() = shot("5-home-not-connected") { home(user.copy(driveRootFolderId = null, driveEmail = null), emptyList()) }
 
     @Test fun accountSheet() = shot("6-account") {
         AccountSheetContent("natiq", user, files, driveBusy = false, syncing = false, biometricAvailable = true,

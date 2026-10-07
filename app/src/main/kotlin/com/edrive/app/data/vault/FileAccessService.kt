@@ -63,7 +63,7 @@ class FileAccessService @Inject constructor(
     }
 
     fun observeFiles(userId: Long): Flow<List<FileEntity>> = files.observe(userId)
-    fun observeFile(id: String): Flow<FileEntity?> = files.observeOne(id)
+    fun observeFile(id: String): Flow<FileEntity?> = files.observeOne(session.requireUser().userId, id)
 
     suspend fun thumbnail(userId: Long, id: String): ImageBitmap? = withContext(Dispatchers.IO) {
         thumbCache.get(id)?.let { return@withContext it }
@@ -80,7 +80,7 @@ class FileAccessService @Inject constructor(
 
     /** Faylı deşifrə edib yaddaşda (RAM) qaytarır — diskə açıq mətn yazılmır. */
     suspend fun decryptToMemory(id: String, onProgress: (Float) -> Unit = {}): ByteArray = withContext(Dispatchers.IO) {
-        val f = files.get(id) ?: error("Fayl tapılmadı")
+        val f = file(id)
         val out = ByteArrayOutputStream(f.size.coerceIn(0, Int.MAX_VALUE.toLong()).toInt())
         decryptInto(f, out, onProgress)
         out.toByteArray()
@@ -91,7 +91,7 @@ class FileAccessService @Inject constructor(
      * Bu, açıq mətnin tətbiq daxilində diskə düşdüyü YEGANƏ haldır — keş qovluğunda, vault kilidlənəndə silinir.
      */
     suspend fun openExternally(id: String, onProgress: (Float) -> Unit = {}): Uri = withContext(Dispatchers.IO) {
-        val f = files.get(id) ?: error("Fayl tapılmadı")
+        val f = file(id)
         val dir = File(store.openDir(), id).apply { mkdirs() }
         val target = File(dir, f.name.replace(Regex("[\\\\/:*?\"<>|]"), "_"))
         try {
@@ -108,7 +108,7 @@ class FileAccessService @Inject constructor(
      * DİQQƏT: nəticə şifrəsiz fayldır və artıq vault-un qorunması altında deyil.
      */
     suspend fun exportTo(id: String, target: Uri, onProgress: (Float) -> Unit = {}) = withContext(Dispatchers.IO) {
-        val f = files.get(id) ?: error("Fayl tapılmadı")
+        val f = file(id)
         val out = context.contentResolver.openOutputStream(target, "wt") ?: error("Faylı yazmaq mümkün olmadı")
         try {
             out.use { decryptInto(f, it, onProgress) }
@@ -120,7 +120,7 @@ class FileAccessService @Inject constructor(
 
     /** Deşifrə olunmuş faylı istifadəçinin seçdiyi qovluğa (SAF ağacı) yazır; ad toqquşsa sistem özü nömrələyir. */
     suspend fun exportToFolder(id: String, tree: Uri, onProgress: (Float) -> Unit = {}) = withContext(Dispatchers.IO) {
-        val f = files.get(id) ?: error("Fayl tapılmadı")
+        val f = file(id)
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         val target = DocumentsContract.createDocument(context.contentResolver, parent, f.mimeType, f.name)
             ?: error("Qovluqda fayl yaradılmadı")
@@ -133,7 +133,7 @@ class FileAccessService @Inject constructor(
      */
     suspend fun exportToGallery(id: String, onProgress: (Float) -> Unit = {}): String = withContext(Dispatchers.IO) {
         check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { "Qalereyaya birbaşa yazmaq Android 10+ tələb edir" }
-        val f = files.get(id) ?: error("Fayl tapılmadı")
+        val f = file(id)
         val video = f.mimeType.startsWith("video/")
         val folder = if (video) "${Environment.DIRECTORY_MOVIES}/eDrive" else "${Environment.DIRECTORY_PICTURES}/eDrive"
         val collection = if (video) MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -162,7 +162,7 @@ class FileAccessService @Inject constructor(
      * Çağıran tərəf [RandomAccessDecryptor.close] etməlidir.
      */
     suspend fun openRandomAccess(id: String, onProgress: (Float) -> Unit = {}): RandomAccessDecryptor = withContext(Dispatchers.IO) {
-        val f = files.get(id) ?: error("Fayl tapılmadı")
+        val f = file(id)
         val file = ciphertextFile(f, onProgress)
         val dek = session.requireKey()
         val source = FileCiphertextSource(file)
@@ -191,7 +191,7 @@ class FileAccessService @Inject constructor(
      * İlk Drive sorğusu alınmazsa (məs. şəbəkə yoxdur) status geri qaytarılır.
      */
     suspend fun removeFromDriveKeepLocal(id: String, onProgress: (Float) -> Unit = {}) = withContext(Dispatchers.IO) {
-        val f = files.get(id) ?: return@withContext
+        val f = files.get(session.requireUser().userId, id) ?: return@withContext
         if (f.status != FileStatus.SYNCED) return@withContext
         val email = users.byId(f.userId)?.driveEmail ?: throw IllegalStateException("Google Drive-a qoşulun")
         val src = ciphertextFile(f, onProgress) // lazım olsa Drive-dan endirilir
@@ -203,22 +203,22 @@ class FileAccessService @Inject constructor(
         }
         val chunk = keep.inputStream().use { StreamingCipher.readHeader(it).chunkSize }
         check(keep.length() == StreamingCipher.ciphertextSize(f.size, chunk)) { "Şifrəli nüsxə tam deyil — Drive-dan silinmədi" }
-        files.setStatus(f.id, FileStatus.LOCAL, 1f)
+        files.setStatus(f.userId, f.id, FileStatus.LOCAL, 1f)
         val api = drives.forAccount(email)
         try {
             f.driveMetaId?.let { api.delete(it) }
         } catch (e: Exception) {
-            files.setStatus(f.id, FileStatus.SYNCED, 1f) // heç nə silinməyib — əvvəlki vəziyyət
+            files.setStatus(f.userId, f.id, FileStatus.SYNCED, 1f) // heç nə silinməyib — əvvəlki vəziyyət
             throw e
         }
         f.driveDataId?.let { api.delete(it) } // alınmasa: status LOCAL qalır, Drive-da yetim şifrəli data ola bilər
-        files.clearDriveIds(f.id)
+        files.clearDriveIds(f.userId, f.id)
         store.cachedBlob(f.id).delete() // artıq outbox-dakı nüsxə var — təkrar saxlamırıq
     }
 
     /** Faylı həm Drive-dan, həm telefondan silir. */
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
-        val f = files.get(id) ?: return@withContext
+        val f = files.get(session.requireUser().userId, id) ?: return@withContext
         val email = users.byId(f.userId)?.driveEmail
         if (email != null && (f.driveDataId != null || f.driveMetaId != null)) {
             val api = drives.forAccount(email)
@@ -229,6 +229,9 @@ class FileAccessService @Inject constructor(
     }
 
     // ------------------------------------------------------------------ daxili
+
+    private suspend fun file(id: String): FileEntity =
+        files.get(session.requireUser().userId, id) ?: error("Fayl tapılmadı")
 
     /** Deşifrəni birbaşa verilən axına yazır (fayl yaddaşa tam yüklənmir). */
     private suspend fun decryptInto(f: FileEntity, out: OutputStream, onProgress: (Float) -> Unit) {

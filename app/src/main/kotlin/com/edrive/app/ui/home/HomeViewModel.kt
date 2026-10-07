@@ -223,7 +223,7 @@ class HomeViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            if (userDao.byId(userId)?.driveUserFolderId != null) {
+            if (userDao.byId(userId)?.isDriveReady == true) {
                 sync(quiet = true)
                 uploadScheduler.schedule()
             }
@@ -319,7 +319,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun retry(id: String) = viewModelScope.launch { uploads.retry(id) }
+    fun retry(id: String) = viewModelScope.launch { uploads.retry(userId, id) }
 
     fun enableBiometric(activity: FragmentActivity) = viewModelScope.launch {
         try {

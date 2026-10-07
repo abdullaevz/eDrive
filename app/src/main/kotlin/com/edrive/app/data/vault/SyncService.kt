@@ -33,7 +33,7 @@ class SyncService @Inject constructor(
     suspend fun sync(): Int = withContext(Dispatchers.IO) {
         val s = session.requireUser()
         val user = users.byId(s.userId) ?: return@withContext 0
-        val folder = user.driveUserFolderId ?: return@withContext 0
+        val folder = user.driveRootFolderId ?: return@withContext 0
         val api = drives.forAccount(user.driveEmail!!)
         val children = api.listChildren(folder)
         val byName = children.associateBy { it.name }
@@ -65,7 +65,7 @@ class SyncService @Inject constructor(
                 added++
             }
             for (id in local) {
-                val f = files.get(id) ?: continue
+                val f = files.get(s.userId, id) ?: continue
                 if (f.status == FileStatus.SYNCED && id !in remoteIds) store.removeLocal(f)
             }
         } finally {

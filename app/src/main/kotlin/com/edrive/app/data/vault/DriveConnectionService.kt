@@ -53,15 +53,14 @@ class DriveConnectionService @Inject constructor(
         val api = drives.forAccount(email)
 
         val rootId = api.ensureFolder(DriveLayout.ROOT_FOLDER, null)
-        val userFolder = api.ensureFolder(s.username, rootId)
 
         val local = accounts.header(s.userId)
-        val remoteFile = api.findByName(DriveLayout.VAULT_FILE, userFolder)
+        val remoteFile = api.findByName(DriveLayout.VAULT_FILE, rootId)
         val user = users.byId(s.userId)!!
-        users.update(user.copy(driveEmail = email, driveRootFolderId = rootId, driveUserFolderId = userFolder))
+        users.update(user.copy(driveEmail = email, driveRootFolderId = rootId))
 
         if (remoteFile == null) {
-            api.uploadSmall(DriveLayout.VAULT_FILE, userFolder, local.toJson().toByteArray(), "application/json")
+            api.uploadSmall(DriveLayout.VAULT_FILE, rootId, local.toJson().toByteArray(), "application/json")
         } else {
             val remote = VaultHeader.fromJson(api.downloadBytes(remoteFile.id).decodeToString())
             if (remote.keyId != local.keyId) {
@@ -94,6 +93,6 @@ class DriveConnectionService @Inject constructor(
             runCatching { (auth.authorize(email) as? AuthResult.Token)?.let { auth.revoke(it.accessToken) } }
             auth.forgetAccount(email)
         }
-        users.update(user.copy(driveEmail = null, driveRootFolderId = null, driveUserFolderId = null))
+        users.update(user.copy(driveEmail = null, driveRootFolderId = null))
     }
 }

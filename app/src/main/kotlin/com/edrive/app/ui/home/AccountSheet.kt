@@ -67,7 +67,7 @@ fun AccountSheetContent(
     onLock: () -> Unit,
     onExportLog: () -> Unit = {},
 ) {
-    val connected = user?.driveUserFolderId != null
+    val connected = user?.isDriveReady == true
     Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Avatar(username, 52.dp)
@@ -140,7 +140,7 @@ fun AccountSheetContent(
                     Text("Parol yerinə biometrik təsdiq", color = EColors.Faint, fontSize = 12.sp)
                 }
                 Switch(
-                    checked = user?.bioWrappedDek != null, onCheckedChange = onBiometric,
+                    checked = user?.biometricEnabled == true, onCheckedChange = onBiometric,
                     colors = SwitchDefaults.colors(checkedTrackColor = EColors.Accent, checkedThumbColor = EColors.AccentInk),
                 )
             }

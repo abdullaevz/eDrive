@@ -57,7 +57,7 @@ class AuthViewModel @Inject constructor(
 
     /** null = hələ yüklənir (DB-dən). */
     val users: StateFlow<List<KnownUser>?> = accounts.observeUsers()
-        .map { list -> list.map { KnownUser(it.id, it.username, it.bioWrappedDek != null) } }
+        .map { list -> list.map { KnownUser(it.id, it.username, it.biometricEnabled) } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val biometricAvailable: Boolean get() = biometric.isAvailable()
