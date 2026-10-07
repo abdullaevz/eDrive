@@ -21,6 +21,7 @@ import com.edrive.app.ui.auth.AuthMode
 import com.edrive.app.ui.auth.AuthState
 import com.edrive.app.ui.auth.KnownUser
 import com.edrive.app.ui.home.AccountSheetContent
+import com.edrive.app.ui.home.ProblemFilesSheet
 import com.edrive.app.ui.home.HomeContent
 import com.edrive.app.ui.home.HomeUi
 import com.edrive.app.ui.theme.EColors
@@ -106,6 +107,17 @@ class ScreenshotTest {
     @Test fun homeGallery() = shot("4-home") { home(user, files) }
 
     @Test fun homeNotConnected() = shot("5-home-not-connected") { home(user.copy(driveRootFolderId = null, driveEmail = null), emptyList()) }
+
+    @Test fun problemFiles() = shot("11-problems") {
+        ProblemFilesSheet(
+            listOf(
+                files[0].copy(status = FileStatus.FAILED, error = "Drive xətası 500"),
+                files[1].copy(status = FileStatus.PENDING, error = "Şəbəkə xətası — yenidən cəhd ediləcək"),
+                files[2].copy(status = FileStatus.FAILED, error = "⛔ Lokal şifrəli nüsxə tapılmadı"),
+            ),
+            onRetry = {}, onRetryAll = noop, onSaveCopy = {}, onDelete = {},
+        )
+    }
 
     @Test fun accountSheet() = shot("6-account") {
         AccountSheetContent("natiq", user, files, driveBusy = false, syncing = false, biometricAvailable = true,

@@ -246,6 +246,22 @@ class HomeViewModel @Inject constructor(
 
     fun retry(id: String) = viewModelScope.launch { uploads.retry(userId, id) }
 
+    fun retryAll() = viewModelScope.launch {
+        files.value.orEmpty().problems().forEach { uploads.retry(userId, it.id) }
+    }
+
+    /** Problemli faylın telefondakı şifrəli nüsxəsini silir (Drive-da yoxdur). */
+    fun deleteLocal(id: String) = viewModelScope.launch {
+        try {
+            fileAccess.delete(id)
+        } catch (e: Exception) {
+            message(friendly(e))
+        }
+    }
+
+    /** Tək faylı seçib endirmə axınına ötürmək üçün ("Telefona şifrəsiz saxla"). */
+    fun selectOnly(id: String) { _selection.value = SelectionState(true, setOf(id)) }
+
     fun lock() = session.lock()
 
     private suspend fun message(text: String) = _events.send(HomeEvent.Message(text))

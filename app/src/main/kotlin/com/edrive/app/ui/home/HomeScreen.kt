@@ -56,8 +56,10 @@ import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -140,6 +142,7 @@ fun HomeRoute(
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmDownload by remember { mutableStateOf(false) }
     var showInfo by remember { mutableStateOf(false) }
+    var showProblems by remember { mutableStateOf(false) }
 
     BackHandler(enabled = selection.active) { vm.clearSelection() }
 
@@ -226,6 +229,7 @@ fun HomeRoute(
         },
         onOpen = onOpen,
         onRetry = vm::retry,
+        onProblems = { showProblems = true },
         selection = selection,
         selectionActions = SelectionActions(
             onToggle = vm::toggleSelect,
@@ -308,6 +312,20 @@ fun HomeRoute(
         }
     }
 
+    if (showProblems) {
+        val problems = files.orEmpty().problems()
+        if (problems.isEmpty()) showProblems = false
+        ModalBottomSheet(onDismissRequest = { showProblems = false }, sheetState = rememberModalBottomSheetState(), containerColor = EColors.Bg2) {
+            ProblemFilesSheet(
+                problems = problems,
+                onRetry = vm::retry,
+                onRetryAll = vm::retryAll,
+                onSaveCopy = { id -> showProblems = false; vm.selectOnly(id); confirmDownload = true },
+                onDelete = vm::deleteLocal,
+            )
+        }
+    }
+
     if (showAccount) {
         ModalBottomSheet(onDismissRequest = { showAccount = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = EColors.Bg2) {
             AccountSheetContent(
@@ -369,6 +387,7 @@ fun HomeContent(
     onUpload: () -> Unit,
     onOpen: (String) -> Unit,
     onRetry: (String) -> Unit,
+    onProblems: () -> Unit = {},
     selection: SelectionState = SelectionState(),
     selectionActions: SelectionActions = SelectionActions(),
 ) {
@@ -425,6 +444,14 @@ fun HomeContent(
                     }
                 },
                 actions = {
+                    val problemCount = remember(list) { list.problems().size }
+                    if (problemCount > 0) {
+                        IconButton(onClick = onProblems) {
+                            BadgedBox(badge = { androidx.compose.material3.Badge(containerColor = EColors.Danger) { Text("$problemCount") } }) {
+                                Icon(Icons.Outlined.WarningAmber, "Problemli fayllar", tint = EColors.Amber)
+                            }
+                        }
+                    }
                     if (list.isNotEmpty()) {
                         IconButton(onClick = selectionActions.onStart) { Icon(Icons.Outlined.CheckCircle, "Seç", tint = EColors.Muted) }
                     }
