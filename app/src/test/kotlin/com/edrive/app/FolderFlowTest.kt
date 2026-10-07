@@ -42,6 +42,7 @@ class FolderFlowTest {
                 is ConnectOutcome.NeedsKey -> connection.adoptVault(o.drive, o.remote, key.toCharArray())
                 is ConnectOutcome.Connected -> Unit
             }
+            connection.restore()
         }
     }
 

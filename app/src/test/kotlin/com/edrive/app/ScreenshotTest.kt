@@ -22,6 +22,8 @@ import com.edrive.app.ui.auth.AuthContent
 import com.edrive.app.ui.auth.AuthMode
 import com.edrive.app.ui.auth.AuthState
 import com.edrive.app.ui.auth.KnownUser
+import com.edrive.app.data.vault.SyncService
+import com.edrive.app.ui.drive.RestoreProgressCard
 import com.edrive.app.ui.home.AccountSheetContent
 import com.edrive.app.ui.home.ProblemFilesSheet
 import com.edrive.app.ui.home.HomeContent
@@ -40,6 +42,8 @@ import org.robolectric.annotation.GraphicsMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 
 /** Ekranların vizual yoxlanışı (Robolectric + Roborazzi) — emulator olmadan PNG yaradır. */
@@ -127,6 +131,14 @@ class ScreenshotTest {
             ),
             onRetry = {}, onRetryAll = noop, onSaveCopy = {}, onDelete = {},
         )
+    }
+
+    @Test fun restoreChecking() = shot("12-restore-checking") {
+        Box(Modifier.padding(24.dp)) { RestoreProgressCard(SyncService.Progress(0, null)) }
+    }
+
+    @Test fun restoreProgress() = shot("12b-restore-progress") {
+        Box(Modifier.padding(24.dp)) { RestoreProgressCard(SyncService.Progress(31, 48)) }
     }
 
     @Test fun accountSheet() = shot("6-account") {

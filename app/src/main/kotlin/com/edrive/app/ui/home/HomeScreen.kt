@@ -116,6 +116,7 @@ import com.edrive.app.ui.drive.DisconnectDialog
 import com.edrive.app.ui.drive.DriveEvent
 import com.edrive.app.ui.drive.DriveViewModel
 import com.edrive.app.ui.drive.KeyDocumentDialog
+import com.edrive.app.ui.drive.RestoreProgressDialog
 import com.edrive.app.ui.drive.SecurityKeyDialog
 import com.edrive.app.ui.findActivity
 import com.edrive.app.ui.folders.Breadcrumb
@@ -411,6 +412,7 @@ fun HomeRoute(
             onClose = driveVm::closeKeyDocument,
         )
     }
+    drive.restore?.let { RestoreProgressDialog(it) }
     drive.disconnectUnsynced?.let { n ->
         DisconnectDialog(n, onConfirm = driveVm::disconnect, onCancel = driveVm::cancelDisconnect)
     }

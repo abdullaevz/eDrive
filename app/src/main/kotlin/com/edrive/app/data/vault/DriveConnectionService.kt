@@ -29,6 +29,7 @@ import javax.inject.Singleton
  *  - Drive-da vault var → onun Təhlükəsizlik açarı soruşulur ([adoptVault]);
  *  - profildə vault var (1.x hesabı), Drive-da yoxdur → yerli vault Drive-a yazılır.
  * Vault həll olunana qədər profilə heç nə yazılmır — istifadəçi imtina etsə, iz qalmır.
+ * Bağlandıqdan sonra fayllar [restore] ilə gətirilir (UI gedişi göstərir).
  */
 @Singleton
 class DriveConnectionService @Inject constructor(
@@ -48,7 +49,8 @@ class DriveConnectionService @Inject constructor(
     data class PendingDrive(val email: String, val rootId: String)
 
     sealed interface ConnectOutcome {
-        data class Connected(val email: String, val imported: Int) : ConnectOutcome
+        /** Drive bu profilə bağlandı — faylları gətirmək üçün [restore] çağırılır. */
+        data class Connected(val email: String) : ConnectOutcome
         /** Drive-da vault yoxdur — yeni Təhlükəsizlik açarı təyin edilməlidir. */
         data class NeedsNewKey(val drive: PendingDrive) : ConnectOutcome
         /** Drive-da vault var — onun Təhlükəsizlik açarı tələb olunur. */
@@ -85,6 +87,17 @@ class DriveConnectionService @Inject constructor(
             )
             else -> ConnectOutcome.NeedsKey(drive, remote)
         }
+    }
+
+    /**
+     * Qoşulmadan sonra Drive-dakı faylları (qovluqlarla birlikdə) gətirir və gözləyən yükləmələri başladır.
+     * @return bərpa olunan faylların sayı
+     */
+    suspend fun restore(onProgress: (SyncService.Progress) -> Unit = {}): Int {
+        val imported = sync.sync(onProgress)
+        uploads.schedule()
+        AppLog.i("drive", "Bərpa olunan fayl: $imported")
+        return imported
     }
 
     /** Drive-da vault yoxdur: yeni vault yaradılır, `vault.json` Drive-a yazılır. */
@@ -161,13 +174,12 @@ class DriveConnectionService @Inject constructor(
         AppLog.i("drive", "Drive ayrıldı, lokal keş təmizləndi")
     }
 
+    /** Vault həll olundu — Drive profilə yazılır. Fayllar [restore] ilə ayrıca gətirilir (gedişi göstərmək üçün). */
     private suspend fun complete(userId: Long, drive: PendingDrive): ConnectOutcome.Connected {
         val user = users.byId(userId) ?: throw AccountException("İstifadəçi tapılmadı")
         users.update(user.copy(driveEmail = drive.email, driveRootFolderId = drive.rootId))
-        val imported = sync.sync()
-        uploads.schedule()
-        AppLog.i("drive", "Drive qoşuldu, bərpa olunan fayl: $imported")
-        return ConnectOutcome.Connected(drive.email, imported)
+        AppLog.i("drive", "Drive qoşuldu")
+        return ConnectOutcome.Connected(drive.email)
     }
 
     private companion object {

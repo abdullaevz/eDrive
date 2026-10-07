@@ -71,12 +71,14 @@ class DriveFlowTest {
         val outcome = phone.connection.finishConnect("token")
         assertTrue("Drive-da vault yoxdur — yeni açar soruşulmalıdır", outcome is ConnectOutcome.NeedsNewKey)
         phone.connection.createVault((outcome as ConnectOutcome.NeedsNewKey).drive, key.toCharArray(), key.toCharArray())
-        ConnectOutcome.Connected("natiq@gmail.com", 0)
+        ConnectOutcome.Connected("natiq@gmail.com")
     }
 
-    private fun connectExisting(phone: TestPhone, key: String): ConnectOutcome = runBlocking {
+    /** Mövcud vault-a qoşulur və faylları gətirir. @return bərpa olunan faylların sayı */
+    private fun connectExisting(phone: TestPhone, key: String): Int = runBlocking {
         val outcome = phone.connection.finishConnect("token") as ConnectOutcome.NeedsKey
         phone.connection.adoptVault(outcome.drive, outcome.remote, key.toCharArray())
+        phone.connection.restore()
     }
 
     private fun remoteHeader(drive: FakeDrive): VaultHeader {
@@ -127,8 +129,10 @@ class DriveFlowTest {
             runBlocking { phoneB.connection.adoptVault(outcome.drive, outcome.remote, "yanlış açar 12345".toCharArray()) }
         }
         assertNull(phoneB.db.users().byUsername("ali")!!.driveEmail)
-        val restored = phoneB.connection.adoptVault(outcome.drive, outcome.remote, key.toCharArray())
-        assertEquals(2, (restored as ConnectOutcome.Connected).imported)
+        assertTrue(phoneB.connection.adoptVault(outcome.drive, outcome.remote, key.toCharArray()) is ConnectOutcome.Connected)
+        val progress = mutableListOf<com.edrive.app.data.vault.SyncService.Progress>()
+        assertEquals(2, phoneB.connection.restore { progress += it })
+        assertEquals("bərpa gedişi: əvvəl yoxlama, sonra hər fayl", listOf(null to 0, 2 to 0, 2 to 1, 2 to 2), progress.map { it.total to it.done })
 
         val filesB = phoneB.files()
         val photoB = filesB.single { it.name == "deniz.jpg" }
@@ -179,8 +183,7 @@ class DriveFlowTest {
         assertEquals("Drive-dakı fayl qalır", 1, drive.filesNamed(".edrv").size)
 
         // Yenidən qoşulma — yeni açarla
-        val again = connectExisting(phoneB, newKey) as ConnectOutcome.Connected
-        assertEquals(1, again.imported)
+        assertEquals(1, connectExisting(phoneB, newKey))
         phoneA.close(); phoneB.close()
     }
 
@@ -194,7 +197,7 @@ class DriveFlowTest {
         val id = phone.files().single().id
 
         phone.register("ali", "5937")
-        assertEquals(1, (connectExisting(phone, "ortaq vault açarı 2026") as ConnectOutcome.Connected).imported)
+        assertEquals(1, connectExisting(phone, "ortaq vault açarı 2026"))
         assertEquals("eyni fayl ID-si iki profildə ayrı sətir kimi", id, phone.files().single().id)
         assertEquals(1, phone.db.files().ids(1).size)
         phone.close()
@@ -251,8 +254,8 @@ class DriveFlowTest {
         val phone = TestPhone(ctx, drive)
         phone.db.users().insert(UserEntity(username = "natiq", createdAt = 1, headerJson = header))
         phone.accounts.migrateLegacy("natiq", password.toCharArray(), "4826".toCharArray(), "4826".toCharArray())
-        val r = phone.connection.finishConnect("token") as ConnectOutcome.Connected
-        assertEquals(1, r.imported)
+        assertTrue(phone.connection.finishConnect("token") is ConnectOutcome.Connected)
+        assertEquals(1, phone.connection.restore())
         assertNotNull("vault.json kökə köçürülüb", drive.nodes.values.singleOrNull { it.name == DriveLayout.VAULT_FILE && it.parent == root.id })
         assertEquals("fayl köhnə qovluqda qalır", legacy.id, phone.files().single().folderId)
         assertEquals(listOf("natiq"), phone.db.folders().all(1).map { it.name })

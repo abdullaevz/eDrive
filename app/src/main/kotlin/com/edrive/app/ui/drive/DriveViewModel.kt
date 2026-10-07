@@ -16,6 +16,7 @@ import com.edrive.app.data.vault.DriveConnectionService
 import com.edrive.app.data.vault.DriveConnectionService.ConnectOutcome
 import com.edrive.app.data.vault.DriveConnectionService.PendingDrive
 import com.edrive.app.data.vault.RemoteVaultMonitor
+import com.edrive.app.data.vault.SyncService
 import com.edrive.app.drive.DriveAuthorizer
 import com.edrive.app.drive.DriveConsentRequired
 import com.edrive.app.ui.userMessage
@@ -67,6 +68,8 @@ data class DriveUi(
     val keyDocumentSavedAs: String? = null,
     /** Ayrılma təsdiqi: hələ Drive-a yüklənməmiş faylların sayı. */
     val disconnectUnsynced: Int? = null,
+    /** Qoşulmadan sonra faylların Drive-dan bərpası gedir (null — getmir). */
+    val restore: SyncService.Progress? = null,
 )
 
 /**
@@ -141,12 +144,15 @@ class DriveViewModel @Inject constructor(
                 when (prompt) {
                     is VaultPrompt.CreateKey -> {
                         val header = connection.createVault(prompt.drive, key.toCharArray(), confirm.toCharArray())
+                        _ui.update { it.copy(prompt = null) }
                         offerKeyDocument(prompt.drive.email, header, key)
+                        restore(showProgress = false)
                         message("Vault yaradıldı və Google Drive qoşuldu")
                     }
                     is VaultPrompt.EnterKey -> {
-                        val r = connection.adoptVault(prompt.drive, prompt.remote, key.toCharArray())
-                        handle(r)
+                        connection.adoptVault(prompt.drive, prompt.remote, key.toCharArray())
+                        _ui.update { it.copy(prompt = null) } // açar qəbul olundu — dialoq bağlanır, bərpa gedişi göstərilir
+                        restore(showProgress = true)
                     }
                     VaultPrompt.UnlockLocal -> {
                         vaults.unlockWithKey(userId, key.toCharArray())
@@ -227,11 +233,25 @@ class DriveViewModel @Inject constructor(
 
     private suspend fun handle(r: ConnectOutcome) {
         when (r) {
-            is ConnectOutcome.Connected -> message(
-                if (r.imported > 0) "Google Drive qoşuldu · ${r.imported} fayl bərpa olundu" else "Google Drive qoşuldu: ${r.email}",
-            )
+            is ConnectOutcome.Connected -> restore(showProgress = true)
             is ConnectOutcome.NeedsNewKey -> _ui.update { it.copy(prompt = VaultPrompt.CreateKey(r.drive), promptError = null) }
             is ConnectOutcome.NeedsKey -> _ui.update { it.copy(prompt = VaultPrompt.EnterKey(r.drive, r.remote), promptError = null) }
+        }
+    }
+
+    /**
+     * Drive-dakı faylları gətirir. [showProgress] — ekranda bərpa kartı (yeni vault-da gətiriləcək fayl olmur).
+     * Xəta dialoqda yox, mesaj kimi göstərilir, çünki açar dialoqu artıq bağlanıb.
+     */
+    private suspend fun restore(showProgress: Boolean) {
+        if (showProgress) _ui.update { it.copy(restore = SyncService.Progress(0, null)) }
+        try {
+            val n = connection.restore { p -> if (showProgress) _ui.update { it.copy(restore = p) } }
+            if (showProgress) message(if (n > 0) "Google Drive qoşuldu · $n fayl bərpa olundu" else "Google Drive qoşuldu")
+        } catch (e: Exception) {
+            message("Drive qoşuldu, amma fayllar gətirilmədi: ${friendly(e)}. Sinxron düyməsi ilə yenidən cəhd edin.")
+        } finally {
+            _ui.update { it.copy(restore = null) }
         }
     }
 

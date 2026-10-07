@@ -1,6 +1,9 @@
 package com.edrive.app.ui.drive
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +24,7 @@ import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,17 +32,24 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.edrive.app.data.SecurityKeyPolicy
+import com.edrive.app.data.vault.SyncService
 import com.edrive.app.drive.DriveLayout
 import com.edrive.app.ui.auth.InfoBox
 import com.edrive.app.ui.components.EField
+import com.edrive.app.ui.components.VaultMark
 import com.edrive.app.ui.theme.EColors
+import kotlin.math.roundToInt
 
 /** Təhlükəsizlik açarı dialoqu — yaratma, daxil etmə, lokal açma və dəyişmə üçün eyni forma. */
 @Composable
@@ -178,4 +189,51 @@ fun DisconnectDialog(unsynced: Int, onConfirm: () -> Unit, onCancel: () -> Unit)
         confirmButton = { TextButton(onClick = onConfirm) { Text("Ayrıl", color = EColors.Danger) } },
         dismissButton = { TextButton(onClick = onCancel) { Text("Ləğv et", color = EColors.Muted) } },
     )
+}
+
+/**
+ * Qoşulmadan sonra faylların Drive-dan bərpası. Bağlanmır — bərpa bitəndə özü yox olur.
+ * Əvvəl Drive oxunur (qeyri-müəyyən zolaq), sonra gətirilən fayl sayı ilə dəqiq irəliləyiş.
+ */
+@Composable
+fun RestoreProgressDialog(progress: SyncService.Progress) {
+    Dialog(onDismissRequest = {}, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)) {
+        RestoreProgressCard(progress)
+    }
+}
+
+/** [RestoreProgressDialog]-un məzmunu (ayrıca — ekran testində dialoq pəncərəsi çəkilmir). */
+@Composable
+fun RestoreProgressCard(progress: SyncService.Progress) {
+    val total = progress.total
+    val fraction = if (total == null || total == 0) 0f else progress.done.toFloat() / total
+    val animated by animateFloatAsState(fraction, animationSpec = tween(400), label = "restore")
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(EColors.Bg2)
+            .border(1.dp, EColors.Line, RoundedCornerShape(24.dp)).padding(horizontal = 24.dp, vertical = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        VaultMark(56.dp, animated = true)
+        Text("Fayllar bərpa olunur", style = MaterialTheme.typography.titleMedium)
+        when {
+            total == null -> {
+                Text("Google Drive yoxlanılır…", color = EColors.Muted, fontSize = 14.sp)
+                LinearProgressIndicator(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)), color = EColors.Accent, trackColor = EColors.Surface3)
+            }
+            total == 0 -> Text("Gətiriləcək yeni fayl yoxdur", color = EColors.Muted, fontSize = 14.sp)
+            else -> {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text("${progress.done}", fontSize = 34.sp, fontWeight = FontWeight.SemiBold, color = EColors.Text)
+                    Text(" / $total fayl", fontSize = 16.sp, color = EColors.Muted, modifier = Modifier.padding(bottom = 6.dp))
+                }
+                LinearProgressIndicator(
+                    progress = { animated },
+                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                    color = EColors.Accent, trackColor = EColors.Surface3, gapSize = 0.dp, drawStopIndicator = {},
+                )
+                Text("${(animated * 100).roundToInt()}% · şifrəli adlar və miniatürlər deşifrə olunur", color = EColors.Faint, fontSize = 12.sp)
+            }
+        }
+    }
 }

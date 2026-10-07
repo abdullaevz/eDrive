@@ -46,8 +46,15 @@ class SyncService @Inject constructor(
 
     private class Tree(val folders: List<FolderEntity>, val metas: Map<String, Located>, val data: Map<String, Located>)
 
-    /** @return əlavə olunan faylların sayı */
-    suspend fun sync(): Int = withContext(Dispatchers.IO) {
+    /** Bərpanın gedişi: [total] — Drive-dan gətiriləcək yeni faylların sayı (ağac oxunana qədər `null`). */
+    data class Progress(val done: Int, val total: Int?)
+
+    /**
+     * @param onProgress əvvəl `total = null` (Drive oxunur), sonra hər yeni fayldan sonra çağırılır
+     * @return əlavə olunan faylların sayı
+     */
+    suspend fun sync(onProgress: (Progress) -> Unit = {}): Int = withContext(Dispatchers.IO) {
+        onProgress(Progress(0, null))
         val s = session.requireUser()
         val user = users.byId(s.userId) ?: return@withContext 0
         val root = user.driveRootFolderId ?: return@withContext 0
@@ -62,8 +69,12 @@ class SyncService @Inject constructor(
         folders.all(s.userId).filter { it.id !in remoteFolders }.forEach { folders.delete(s.userId, it.id) }
 
         val remoteIds = HashSet<String>()
+        val known = files.ids(s.userId).toHashSet()
+        val total = tree.metas.keys.count { it !in known && it in tree.data }
+        onProgress(Progress(0, total))
         val dek = session.requireKey()
         var added = 0
+        var skipped = 0
         try {
             for ((id, meta) in tree.metas) {
                 val data = tree.data[id] ?: continue // yarımçıq yükləmə
@@ -80,6 +91,7 @@ class SyncService @Inject constructor(
                 val manifest = try {
                     ItemManifest.open(dek, id, api.downloadBytes(meta.file.id))
                 } catch (e: AuthenticationFailedException) {
+                    onProgress(Progress(++skipped + added, total))
                     continue // başqa açarla şifrələnib — atlanır
                 }
                 val thumb = manifest.thumbnail?.let { Base64.getDecoder().decode(it) }
@@ -93,6 +105,7 @@ class SyncService @Inject constructor(
                     ),
                 )
                 added++
+                onProgress(Progress(added + skipped, total))
             }
             for (f in files.all(s.userId)) {
                 if (f.status == FileStatus.SYNCED && f.id !in remoteIds) store.removeLocal(f)
