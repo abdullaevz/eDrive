@@ -15,6 +15,8 @@ Bu versiyada giriş və vault modeli dəyişir. 1.x hesabları ilk girişdə kö
 - Problemli fayllar bildirişi: Drive-a çatmayan fayllar üçün nişan, siyahı və hərəkətlər (yenidən cəhd, hamısını yenidən cəhd, şifrəsiz saxla, sil).
 - Drive-dakı `vault.json` hər açılışda yerli nüsxə ilə müqayisə olunur: başqa vault-a dəyişibsə yükləmə dayandırılır, silinibsə yerli nüsxədən bərpa olunur.
 - Bir telefonda bir neçə hesab eyni Google Drive-a qoşula bilər (eyni vault və fayllar).
+- Mövcud vault-a qoşulanda açar qəbul olunan kimi dialoq bağlanır və faylların bərpası irəliləyiş kartı ilə göstərilir ("31 / 48 fayl", zolaq, faiz).
+- Qovluqlar fayllar kimi seçilir (uzun basma, "hamısını seç"). Seçim panelindən qovluq və faylları birlikdə köçürmək, qovluğun adını dəyişmək və qovluqları silmək olar. Qovluq içindəkilərlə birlikdə köçür; öz içinə köçürmək, dərinlik limitini aşmaq və eyni ad qadağandır.
 
 ### Dəyişdi
 - Drive quruluşu: `eDrive Storage/<istifadəçi adı>/` əvəzinə `eDrive Storage/` kökü. 1.x quruluşunda yalnız `vault.json` kökə köçürülür, fayllar köhnə qovluqda qalır və proqramda adi qovluq kimi görünür.
