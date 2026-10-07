@@ -65,12 +65,51 @@ class FolderService @Inject constructor(
         folders.upsert(folder.copy(name = clean))
     }
 
-    suspend fun contents(id: String): Contents {
+    suspend fun contents(id: String): Contents = contents(listOf(id))
+
+    /** Bir neçə qovluğun ümumi içindəkiləri (iç-içə seçilənlər iki dəfə sayılmır). */
+    suspend fun contents(ids: Collection<String>): Contents {
         val userId = session.requireUser().userId
         val all = folders.all(userId)
-        val tree = descendants(id, all) + id
+        val roots = topLevel(ids, all)
+        val tree = roots.flatMapTo(HashSet()) { descendants(it, all) + it }
         val inside = files.all(userId).filter { it.folderId in tree }
-        return Contents(inside.size, tree.size - 1, inside.count { it.status != FileStatus.SYNCED && it.status != FileStatus.LOCAL })
+        return Contents(inside.size, tree.size - roots.size, inside.count { it.status != FileStatus.SYNCED && it.status != FileStatus.LOCAL })
+    }
+
+    /** Bir neçə qovluğu silir; seçilmiş qovluğun içindəki seçilmiş alt qovluq ayrıca emal olunmur. */
+    suspend fun delete(ids: Collection<String>, mode: DeleteMode) {
+        val userId = session.requireUser().userId
+        topLevel(ids, folders.all(userId)).forEach { delete(it, mode) }
+    }
+
+    /**
+     * Qovluqları [targetId] qovluğuna (`null` = kök) köçürür — Drive-da qovluq bütün içindəkiləri ilə birlikdə köçür.
+     * Qovluğu özünə və ya öz alt qovluğuna köçürmək, dərinlik limitini aşmaq və eyni adlı qovluq yaratmaq olmaz.
+     * @return köçürülən qovluqların sayı
+     */
+    suspend fun moveFolders(ids: Collection<String>, targetId: String?): Int = withContext(Dispatchers.IO) {
+        val userId = session.requireUser().userId
+        if (ids.isEmpty()) return@withContext 0
+        val (api, root) = drive(userId)
+        var moved = 0
+        for (id in topLevel(ids, folders.all(userId))) {
+            val all = folders.all(userId)
+            val folder = all.firstOrNull { it.id == id } ?: continue
+            if (folder.parentId == targetId) continue
+            if (targetId == id || targetId in descendants(id, all)) {
+                throw AccountException("\"${folder.name}\" qovluğunu öz içinə köçürmək olmaz")
+            }
+            val targetDepth = targetId?.let { depth(it, all) } ?: 0
+            if (targetDepth + height(id, all) > DriveLayout.MAX_DEPTH) {
+                throw AccountException("Köçürmədən sonra ${DriveLayout.MAX_DEPTH} səviyyədən dərin qovluq yaranır")
+            }
+            requireUnique(folder.name, targetId, all, exceptId = id)
+            api.move(id, folder.parentId ?: root, targetId ?: root)
+            folders.upsert(folder.copy(parentId = targetId))
+            moved++
+        }
+        moved
     }
 
     suspend fun delete(id: String, mode: DeleteMode) = withContext(Dispatchers.IO) {
@@ -161,6 +200,19 @@ class FolderService @Inject constructor(
                 cur = byId[cur]?.parentId
             }
             return d
+        }
+
+        /** Qovluğun özü də daxil olmaqla neçə səviyyə tutduğu (alt qovluğu yoxdursa 1). */
+        fun height(id: String, all: List<FolderEntity>): Int {
+            val children = all.groupBy { it.parentId }
+            fun h(f: String): Int = 1 + (children[f].orEmpty().maxOfOrNull { h(it.id) } ?: 0)
+            return h(id)
+        }
+
+        /** Seçilmişlərdən başqa seçilmiş qovluğun içində olmayanlar. */
+        fun topLevel(ids: Collection<String>, all: List<FolderEntity>): List<String> {
+            val selected = ids.toSet()
+            return ids.distinct().filter { id -> selected.none { other -> other != id && id in descendants(other, all) } }
         }
 
         /** Bütün nəsillər (alt qovluqlar, alt-alt qovluqlar…), qovluğun özü xaric. */

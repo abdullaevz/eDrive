@@ -7,6 +7,7 @@ import com.edrive.app.ui.home.BatchProgress
 import com.edrive.app.ui.home.driveRemovable
 import com.edrive.app.ui.home.exportable
 import com.edrive.app.ui.home.needsFolder
+import com.edrive.app.ui.home.SelectionState
 import com.edrive.app.ui.home.toggleAll
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -73,5 +74,15 @@ class SelectionTest {
 
     @Test fun infoRowsOmitDimensionsWhenUnknown() =
         assertFalse(fileInfoRows(f("x"), Locale.US).any { it.first == "Ölçülər" })
-}
 
+    @Test fun toggleAllWithFolders() {
+        val none = SelectionState(active = true)
+        val all = none.toggleAll(listOf("a", "b"), listOf("f1"))
+        assertEquals(setOf("a", "b"), all.ids)
+        assertEquals(setOf("f1"), all.folders)
+        assertEquals(3, all.count)
+        assertEquals("hamısı seçilibsə təmizlənir", 0, all.toggleAll(listOf("a", "b"), listOf("f1")).count)
+        val partial = SelectionState(true, setOf("a"), emptySet())
+        assertEquals(3, partial.toggleAll(listOf("a", "b"), listOf("f1")).count)
+    }
+}

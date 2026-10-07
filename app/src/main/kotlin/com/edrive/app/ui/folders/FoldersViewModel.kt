@@ -36,8 +36,10 @@ data class FolderLocation(
 sealed interface FolderDialog {
     data object Create : FolderDialog
     data class Rename(val folder: FolderEntity) : FolderDialog
-    data class Delete(val folder: FolderEntity, val contents: FolderService.Contents) : FolderDialog
-    data class Move(val fileIds: Set<String>) : FolderDialog
+    data class Delete(val folders: List<FolderEntity>, val contents: FolderService.Contents) : FolderDialog
+    data class Move(val fileIds: Set<String>, val folderIds: Set<String>) : FolderDialog {
+        val count: Int get() = fileIds.size + folderIds.size
+    }
 }
 
 data class FolderUi(val dialog: FolderDialog? = null, val busy: Boolean = false, val error: String? = null)
@@ -76,11 +78,11 @@ class FoldersViewModel @Inject constructor(
 
     fun showCreate() = show(FolderDialog.Create)
     fun showRename(folder: FolderEntity) = show(FolderDialog.Rename(folder))
-    fun showMove(fileIds: Set<String>) = show(FolderDialog.Move(fileIds))
+    fun showMove(fileIds: Set<String>, folderIds: Set<String>) = show(FolderDialog.Move(fileIds, folderIds))
     fun dismiss() = _ui.update { FolderUi() }
 
-    fun showDelete(folder: FolderEntity) = viewModelScope.launch {
-        show(FolderDialog.Delete(folder, service.contents(folder.id)))
+    fun showDelete(folders: List<FolderEntity>) = viewModelScope.launch {
+        if (folders.isNotEmpty()) show(FolderDialog.Delete(folders, service.contents(folders.map { it.id })))
     }
 
     fun create(name: String) = perform { service.create(name, currentId.value) }
@@ -90,19 +92,29 @@ class FoldersViewModel @Inject constructor(
         service.rename(d.folder.id, name)
     }
 
-    fun delete(mode: DeleteMode) = perform {
+    /** [onDone] — silmə bitəndə (seçimi təmizləmək üçün). */
+    fun delete(mode: DeleteMode, onDone: () -> Unit) = perform {
         val d = _ui.value.dialog as? FolderDialog.Delete ?: return@perform
-        service.delete(d.folder.id, mode)
-        if (currentId.value == d.folder.id) currentId.value = d.folder.parentId
-        _messages.send("\"${d.folder.name}\" silindi")
+        val all = location.value.all
+        val gone = d.folders.flatMapTo(HashSet()) { FolderService.descendants(it.id, all) + it.id }
+        service.delete(d.folders.map { it.id }, mode)
+        if (currentId.value in gone) currentId.value = null // açıq qovluq silinib — kökə qayıdılır
+        _messages.send(d.folders.singleOrNull()?.let { "\"${it.name}\" silindi" } ?: "${d.folders.size} qovluq silindi")
+        onDone()
     }
 
-    /** [onDone] — köçürmə bitəndə (seçimi təmizləmək üçün). */
+    /** Seçilmiş qovluq və faylları köçürür. [onDone] — köçürmə bitəndə (seçimi təmizləmək üçün). */
     fun move(targetId: String?, onDone: () -> Unit) = perform {
         val d = _ui.value.dialog as? FolderDialog.Move ?: return@perform
-        val n = service.moveFiles(d.fileIds, targetId)
-        val skipped = d.fileIds.size - n
-        _messages.send("$n fayl köçürüldü" + if (skipped > 0) " · $skipped keçildi" else "")
+        val folders = service.moveFolders(d.folderIds, targetId)
+        val files = service.moveFiles(d.fileIds, targetId)
+        val skipped = d.count - folders - files
+        _messages.send(
+            listOfNotNull(
+                "$folders qovluq".takeIf { folders > 0 },
+                "$files fayl".takeIf { files > 0 },
+            ).joinToString(" və ").ifEmpty { "Heç nə" } + " köçürüldü" + if (skipped > 0) " · $skipped keçildi" else "",
+        )
         onDone()
     }
 

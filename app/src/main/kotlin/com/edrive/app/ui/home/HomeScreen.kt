@@ -40,7 +40,6 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudOff
-import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CloudQueue
@@ -57,6 +56,7 @@ import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material.icons.outlined.UploadFile
@@ -105,12 +105,12 @@ import androidx.compose.ui.unit.sp
 import com.edrive.app.drive.DriveLayout
 import com.edrive.app.data.db.entity.FileEntity
 import com.edrive.app.data.db.entity.FileStatus
-import com.edrive.app.data.db.entity.FolderEntity
 import com.edrive.app.data.db.entity.UserEntity
 import com.edrive.app.ui.components.Avatar
 import com.edrive.app.ui.components.EField
 import com.edrive.app.ui.components.FileInfoDialog
 import com.edrive.app.ui.components.PrimaryButton
+import com.edrive.app.ui.components.SelectionMark
 import com.edrive.app.ui.components.StatusDot
 import com.edrive.app.ui.drive.DisconnectDialog
 import com.edrive.app.ui.drive.DriveEvent
@@ -119,9 +119,9 @@ import com.edrive.app.ui.drive.KeyDocumentDialog
 import com.edrive.app.ui.drive.RestoreProgressDialog
 import com.edrive.app.ui.drive.SecurityKeyDialog
 import com.edrive.app.ui.findActivity
+import com.edrive.app.data.vault.FolderService
 import com.edrive.app.ui.folders.Breadcrumb
 import com.edrive.app.ui.folders.DeleteFolderDialog
-import com.edrive.app.ui.folders.FolderActionsDialog
 import com.edrive.app.ui.folders.FolderDialog
 import com.edrive.app.ui.folders.FolderLocation
 import com.edrive.app.ui.folders.FolderNameDialog
@@ -148,7 +148,6 @@ fun HomeRoute(
     val drive by driveVm.ui.collectAsState()
     val location by foldersVm.location.collectAsState()
     val folderUi by foldersVm.ui.collectAsState()
-    var menuFolder by remember { mutableStateOf<FolderEntity?>(null) }
     val selection by vm.selection.collectAsState()
     val context = LocalContext.current
     val activity = context.findActivity()
@@ -254,19 +253,27 @@ fun HomeRoute(
         folders = location,
         folderActions = FolderActions(
             onOpen = foldersVm::open,
-            onMenu = { menuFolder = it },
             onCreate = foldersVm::showCreate,
         ),
         selection = selection,
         selectionActions = SelectionActions(
             onToggle = vm::toggleSelect,
+            onToggleFolder = vm::toggleFolder,
             onStart = vm::startSelect,
             onSelectAll = vm::selectAll,
             onClear = vm::clearSelection,
             onDownload = { confirmDownload = true },
-            onDelete = { confirmDelete = true },
+            onDelete = {
+                when {
+                    selection.hasFolders && selection.hasFiles ->
+                        scope.launch { snackbar.showSnackbar("Qovluqları və faylları ayrıca silin") }
+                    selection.hasFolders -> foldersVm.showDelete(location.all.filter { it.id in selection.folders })
+                    else -> confirmDelete = true
+                }
+            },
             onInfo = { showInfo = true },
-            onMove = { foldersVm.showMove(selection.ids) },
+            onMove = { foldersVm.showMove(selection.ids, selection.folders) },
+            onRename = { location.all.firstOrNull { it.id in selection.folders }?.let(foldersVm::showRename) },
         ),
     )
 
@@ -340,20 +347,17 @@ fun HomeRoute(
         }
     }
 
-    menuFolder?.let { f ->
-        FolderActionsDialog(
-            f,
-            onRename = { menuFolder = null; foldersVm.showRename(f) },
-            onDelete = { menuFolder = null; foldersVm.showDelete(f) },
-            onDismiss = { menuFolder = null },
-        )
-    }
     when (val d = folderUi.dialog) {
         FolderDialog.Create -> FolderNameDialog("Yeni qovluq", "", folderUi.busy, folderUi.error, foldersVm::create, foldersVm::dismiss)
         is FolderDialog.Rename -> FolderNameDialog("Adını dəyiş", d.folder.name, folderUi.busy, folderUi.error, foldersVm::rename, foldersVm::dismiss)
-        is FolderDialog.Delete -> DeleteFolderDialog(d.folder, d.contents, folderUi.busy, folderUi.error, foldersVm::delete, foldersVm::dismiss)
+        is FolderDialog.Delete -> DeleteFolderDialog(
+            d.folders, d.contents, folderUi.busy, folderUi.error,
+            onDelete = { mode -> foldersVm.delete(mode, onDone = vm::clearSelection) }, onDismiss = foldersVm::dismiss,
+        )
         is FolderDialog.Move -> MoveToFolderDialog(
-            location.all, d.fileIds.size, folderUi.busy, folderUi.error,
+            location.all, d.count,
+            excluded = d.folderIds.flatMapTo(HashSet()) { FolderService.descendants(it, location.all) + it },
+            busy = folderUi.busy, error = folderUi.error,
             onMove = { target -> foldersVm.move(target, onDone = vm::clearSelection) }, onDismiss = foldersVm::dismiss,
         )
         null -> Unit
@@ -453,23 +457,32 @@ fun HomeContent(
         bottomBar = { ui.batch?.let { BatchBar(it) } },
         topBar = {
             if (selection.active) {
-                val n = selection.ids.size
+                val n = selection.count
+                val files = selection.ids.size
                 TopAppBar(
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = EColors.Bg),
-                    title = { Text(if (n == 0) "Fayl seçin" else "$n seçildi", fontWeight = FontWeight.SemiBold) },
+                    title = { Text(if (n == 0) "Seçin" else "$n seçildi", fontWeight = FontWeight.SemiBold) },
                     navigationIcon = {
                         IconButton(onClick = selectionActions.onClear, enabled = !busy) { Icon(Icons.Outlined.Close, "Seçimi ləğv et", tint = EColors.Muted) }
                     },
                     actions = {
-                        IconButton(onClick = { selectionActions.onSelectAll(shown.map { it.id }) }, enabled = !busy && shown.isNotEmpty()) {
+                        IconButton(
+                            onClick = { selectionActions.onSelectAll(shown.map { it.id }, folders.children.map { it.id }) },
+                            enabled = !busy && (shown.isNotEmpty() || folders.children.isNotEmpty()),
+                        ) {
                             Icon(Icons.Outlined.SelectAll, "Hamısını seç", tint = EColors.Muted)
                         }
                         if (connected) IconButton(onClick = selectionActions.onMove, enabled = n > 0 && !busy) {
                             Icon(Icons.AutoMirrored.Outlined.DriveFileMove, "Qovluğa köçür", tint = if (n > 0 && !busy) EColors.Muted else EColors.Faint)
                         }
-                        if (n == 1) IconButton(onClick = selectionActions.onInfo, enabled = !busy) { Icon(Icons.Outlined.Info, "Məlumat", tint = EColors.Muted) }
-                        IconButton(onClick = selectionActions.onDownload, enabled = n > 0 && !busy) {
-                            Icon(Icons.Outlined.Download, "Cihaza endir", tint = if (n > 0 && !busy) EColors.Accent else EColors.Faint)
+                        if (selection.folders.size == 1 && files == 0) {
+                            IconButton(onClick = selectionActions.onRename, enabled = !busy) {
+                                Icon(Icons.Outlined.DriveFileRenameOutline, "Adını dəyiş", tint = EColors.Muted)
+                            }
+                        }
+                        if (files == 1 && !selection.hasFolders) IconButton(onClick = selectionActions.onInfo, enabled = !busy) { Icon(Icons.Outlined.Info, "Məlumat", tint = EColors.Muted) }
+                        if (!selection.hasFolders) IconButton(onClick = selectionActions.onDownload, enabled = files > 0 && !busy) {
+                            Icon(Icons.Outlined.Download, "Cihaza endir", tint = if (files > 0 && !busy) EColors.Accent else EColors.Faint)
                         }
                         IconButton(onClick = selectionActions.onDelete, enabled = n > 0 && !busy) {
                             Icon(Icons.Outlined.Delete, "Sil", tint = if (n > 0 && !busy) EColors.Danger else EColors.Faint)
@@ -552,10 +565,14 @@ fun HomeContent(
             if (connected && (folders.current != null || folders.children.isNotEmpty())) {
                 item(span = { GridItemSpan(maxLineSpan) }) { Breadcrumb(folders.path, folderActions.onOpen) }
             }
-            if (!selection.active) {
-                items(folders.children, key = { "folder-" + it.id }) { f ->
-                    FolderTile(f, onClick = { folderActions.onOpen(f.id) }, onLongClick = { folderActions.onMenu(f) })
-                }
+            items(folders.children, key = { "folder-" + it.id }) { f ->
+                FolderTile(
+                    f,
+                    onClick = { if (selection.active) selectionActions.onToggleFolder(f.id) else folderActions.onOpen(f.id) },
+                    onLongClick = { if (!busy) selectionActions.onToggleFolder(f.id) },
+                    selectionMode = selection.active,
+                    selected = f.id in selection.folders,
+                )
             }
             if (!connected) {
                 item(span = { GridItemSpan(maxLineSpan) }) { ConnectCard(driveBusy, onConnect) }
@@ -675,17 +692,7 @@ fun FileTile(
             }
         }
         StatusOverlay(f)
-        if (selectionMode) {
-            if (selected) Box(Modifier.matchParentSize().background(Color(0x333DDC97)))
-            Box(
-                Modifier.align(Alignment.TopStart).padding(6.dp).size(22.dp).clip(CircleShape)
-                    .background(if (selected) EColors.Accent else Color(0x99070A0E))
-                    .border(1.5.dp, if (selected) EColors.Accent else Color.White, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (selected) Icon(Icons.Outlined.Check, null, tint = EColors.AccentInk, modifier = Modifier.size(14.dp))
-            }
-        }
+        if (selectionMode) SelectionMark(selected)
     }
 }
 

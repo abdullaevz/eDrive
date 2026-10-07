@@ -26,6 +26,7 @@ import com.edrive.app.data.vault.SyncService
 import com.edrive.app.ui.drive.RestoreProgressCard
 import com.edrive.app.ui.home.AccountSheetContent
 import com.edrive.app.ui.home.ProblemFilesSheet
+import com.edrive.app.ui.home.SelectionState
 import com.edrive.app.ui.home.HomeContent
 import com.edrive.app.ui.home.HomeUi
 import com.edrive.app.ui.theme.EColors
@@ -110,6 +111,19 @@ class ScreenshotTest {
         onAccount = noop, onLock = noop, onSync = noop, onConnect = noop, onUpload = noop, onOpen = {}, onRetry = {},
         folders = folders,
     ) }
+
+    @Test fun homeFolderSelection() = shot("4c-home-folder-select") {
+        val docs = FolderEntity("f1", 1, "Sənədlər", null, 0)
+        val trip = FolderEntity("f2", 1, "Səyahət 2026", "f1", 0)
+        val tax = FolderEntity("f3", 1, "Vergi", "f1", 0)
+        HomeContent(
+            username = "natiq", user = user, files = files.map { it.copy(folderId = "f1") }.take(3), ui = HomeUi(), snackbar = SnackbarHostState(),
+            loadThumb = { id -> thumb(id.last().digitToInt()) },
+            onAccount = noop, onLock = noop, onSync = noop, onConnect = noop, onUpload = noop, onOpen = {}, onRetry = {},
+            folders = FolderLocation(docs, listOf(docs), listOf(trip, tax), listOf(docs, trip, tax)),
+            selection = SelectionState(active = true, ids = setOf("a3"), folders = setOf("f2")),
+        )
+    }
 
     @Test fun homeFolders() = shot("4b-home-folders") {
         val docs = FolderEntity("f1", 1, "Sənədlər", null, 0)

@@ -1,5 +1,7 @@
 package com.edrive.app.ui.components
 
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -211,4 +213,18 @@ fun Chip(text: String, modifier: Modifier = Modifier) {
         modifier = modifier.clip(RoundedCornerShape(50)).background(EColors.Bg2)
             .border(1.dp, EColors.Line, RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 4.dp),
     )
+}
+
+/** Seçim rejimində xana üzərindəki işarə (fayl və qovluq xanaları üçün ortaq). */
+@Composable
+fun BoxScope.SelectionMark(selected: Boolean) {
+    if (selected) Box(Modifier.matchParentSize().background(Color(0x333DDC97)))
+    Box(
+        Modifier.align(Alignment.TopStart).padding(6.dp).size(22.dp).clip(CircleShape)
+            .background(if (selected) EColors.Accent else Color(0x99070A0E))
+            .border(1.5.dp, if (selected) EColors.Accent else Color.White, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) Icon(Icons.Outlined.Check, null, tint = EColors.AccentInk, modifier = Modifier.size(14.dp))
+    }
 }

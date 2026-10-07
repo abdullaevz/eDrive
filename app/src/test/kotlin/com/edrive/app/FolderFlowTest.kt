@@ -141,4 +141,51 @@ class FolderFlowTest {
         assertEquals(FileStatus.SYNCED, p.files().single().status)
         p.close()
     }
+
+    @Test fun moveFoldersWithRules() = runBlocking {
+        val drive = FakeDrive()
+        val p = connected(drive)
+        val a = p.folders.create("A", null)
+        val b = p.folders.create("B", null)
+        val a1 = p.folders.create("A1", a.id)
+        p.importer.import(listOf(note("z.txt")), a1.id)
+        assertTrue(p.uploads.processQueue())
+
+        assertThrows("özünə köçürmək olmaz", AccountException::class.java) { runBlocking { p.folders.moveFolders(listOf(a.id), a.id) } }
+        assertThrows("alt qovluğuna köçürmək olmaz", AccountException::class.java) { runBlocking { p.folders.moveFolders(listOf(a.id), a1.id) } }
+        p.folders.create("A", b.id)
+        assertThrows("hədəfdə eyni adlı qovluq", AccountException::class.java) { runBlocking { p.folders.moveFolders(listOf(a.id), b.id) } }
+
+        // A1 (içindəki faylla) B-yə köçür: Drive-da yalnız qovluğun valideyni dəyişir, fayl qovluqla gedir
+        assertEquals(1, p.folders.moveFolders(listOf(a1.id), b.id))
+        assertEquals(b.id, drive.nodes.getValue(a1.id).parent)
+        assertEquals(b.id, p.db.folders().get(1, a1.id)!!.parentId)
+        assertEquals(a1.id, p.files().single().folderId)
+
+        // Dərinlik limiti: 5 səviyyəli zəncirin altına 2 səviyyəli qovluq sığmır
+        var deep: String? = null
+        repeat(DriveLayout.MAX_DEPTH - 1) { deep = p.folders.create("d$it", deep).id }
+        assertThrows(AccountException::class.java) { runBlocking { p.folders.moveFolders(listOf(b.id), deep) } }
+
+        // Başqa telefon yeni quruluşu görür
+        File(ctx.filesDir, "vault").deleteRecursively()
+        val other = connected(drive, "ali")
+        assertEquals(b.id, other.db.folders().get(1, a1.id)!!.parentId)
+        assertEquals(a1.id, other.files().single().folderId)
+        p.close(); other.close()
+    }
+
+    @Test fun deleteSeveralFoldersIncludingNestedSelection() = runBlocking {
+        val drive = FakeDrive()
+        val p = connected(drive)
+        val x = p.folders.create("X", null)
+        val x1 = p.folders.create("X1", x.id)
+        val y = p.folders.create("Y", null)
+        val contents = p.folders.contents(listOf(x.id, x1.id, y.id))
+        assertEquals("iç-içə seçilmiş qovluq iki dəfə sayılmır", 1, contents.folders)
+        p.folders.delete(listOf(x.id, x1.id, y.id), DeleteMode.WITH_CONTENTS)
+        assertTrue(p.db.folders().all(1).isEmpty())
+        assertTrue(x.id in drive.trashed && y.id in drive.trashed)
+        p.close()
+    }
 }

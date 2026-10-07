@@ -7,7 +7,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,7 +26,6 @@ import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material3.AlertDialog
@@ -52,24 +53,36 @@ import com.edrive.app.data.vault.FolderService
 import com.edrive.app.data.vault.FolderService.DeleteMode
 import com.edrive.app.drive.DriveLayout
 import com.edrive.app.ui.components.EField
+import com.edrive.app.ui.components.SelectionMark
 import com.edrive.app.ui.theme.EColors
 
-/** Fayl şəbəkəsində qovluq xanası: toxunuş — açır, uzun basma — ad dəyişmə / silmə. */
+/** Fayl şəbəkəsində qovluq xanası: toxunuş — açır (seçim rejimində seçir), uzun basma — seçim (fayllar kimi). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun FolderTile(folder: FolderEntity, onClick: () -> Unit, onLongClick: () -> Unit) {
-    Column(
+fun FolderTile(
+    folder: FolderEntity,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+) {
+    Box(
         Modifier.aspectRatio(1f).clip(RoundedCornerShape(14.dp)).background(EColors.Surface)
-            .border(1.dp, EColors.Line, RoundedCornerShape(14.dp))
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .border(if (selected) 2.dp else 1.dp, if (selected) EColors.Accent else EColors.Line, RoundedCornerShape(14.dp))
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
-        Icon(Icons.Outlined.Folder, null, tint = EColors.Amber, modifier = Modifier.size(40.dp))
-        Text(
-            folder.name, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 2,
-            overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp),
-        )
+        Column(
+            Modifier.fillMaxSize().padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(Icons.Outlined.Folder, null, tint = EColors.Amber, modifier = Modifier.size(40.dp))
+            Text(
+                folder.name, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 2,
+                overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+        if (selectionMode) SelectionMark(selected)
     }
 }
 
@@ -92,35 +105,6 @@ private fun Crumb(text: String, active: Boolean, onClick: () -> Unit) {
         color = if (active) EColors.Text else EColors.Muted, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
         modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 2.dp),
     )
-}
-
-/** Uzun basma menyusu. */
-@Composable
-fun FolderActionsDialog(folder: FolderEntity, onRename: () -> Unit, onDelete: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = EColors.Bg2,
-        icon = { Icon(Icons.Outlined.Folder, null, tint = EColors.Amber) },
-        title = { Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        text = {
-            Column {
-                MenuRow(Icons.Outlined.DriveFileRenameOutline, "Adını dəyiş", EColors.Text, onRename)
-                MenuRow(Icons.Outlined.Delete, "Sil", EColors.Danger, onDelete)
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Bağla", color = EColors.Muted) } },
-    )
-}
-
-@Composable
-private fun MenuRow(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, tint: androidx.compose.ui.graphics.Color, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 12.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, null, tint = tint)
-        Text(text, color = tint, modifier = Modifier.padding(start = 14.dp))
-    }
 }
 
 /** Yeni qovluq və ya ad dəyişmə. Ad Drive-da açıq mətn olduğu üçün xəbərdarlıq göstərilir. */
@@ -148,7 +132,7 @@ fun FolderNameDialog(title: String, initial: String, busy: Boolean, error: Strin
 /** Silmə: boş qovluq birbaşa, dolu qovluq üçün iki seçim — içindəkiləri üst qovluğa köçürmək və ya birlikdə silmək. */
 @Composable
 fun DeleteFolderDialog(
-    folder: FolderEntity,
+    folders: List<FolderEntity>,
     contents: FolderService.Contents,
     busy: Boolean,
     error: String?,
@@ -160,11 +144,11 @@ fun DeleteFolderDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         containerColor = EColors.Bg2,
         icon = { Icon(Icons.Outlined.Delete, null, tint = EColors.Danger) },
-        title = { Text("\"${folder.name}\" silinsin?") },
+        title = { Text(folders.singleOrNull()?.let { "\"${it.name}\" silinsin?" } ?: "${folders.size} qovluq silinsin?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (contents.isEmpty) {
-                    Text("Qovluq boşdur.", color = EColors.Muted)
+                    Text(if (folders.size == 1) "Qovluq boşdur." else "Qovluqlar boşdur.", color = EColors.Muted)
                 } else {
                     Text("İçində ${contents.files} fayl və ${contents.folders} qovluq var.", color = EColors.Muted)
                     Choice("İçindəkiləri üst qovluğa köçür, qovluğu sil", mode == DeleteMode.MOVE_UP) { mode = DeleteMode.MOVE_UP }
@@ -199,19 +183,28 @@ private fun Choice(text: String, selected: Boolean, onClick: () -> Unit) {
 
 /** Faylları köçürmək üçün hədəf qovluq seçimi (bütün ağac, girintili). */
 @Composable
-fun MoveToFolderDialog(all: List<FolderEntity>, count: Int, busy: Boolean, error: String?, onMove: (String?) -> Unit, onDismiss: () -> Unit) {
+fun MoveToFolderDialog(
+    all: List<FolderEntity>,
+    count: Int,
+    excluded: Set<String>,
+    busy: Boolean,
+    error: String?,
+    onMove: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val rows = remember(all) { flatten(all) }
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         containerColor = EColors.Bg2,
         icon = { Icon(Icons.AutoMirrored.Outlined.DriveFileMove, null, tint = EColors.Accent) },
-        title = { Text("$count fayl hara köçürülsün?") },
+        title = { Text("$count element hara köçürülsün?") },
         text = {
             Column {
                 LazyColumn(Modifier.heightIn(max = 360.dp)) {
                     item { Target(Icons.Outlined.Home, DriveLayout.ROOT_FOLDER, 0, enabled = !busy) { onMove(null) } }
                     items(rows, key = { it.first.id }) { (f, depth) ->
-                        Target(Icons.Outlined.Folder, f.name, depth, enabled = !busy) { onMove(f.id) }
+                        // Qovluğu özünə və ya alt qovluğuna köçürmək olmaz
+                        Target(Icons.Outlined.Folder, f.name, depth, enabled = !busy && f.id !in excluded) { onMove(f.id) }
                     }
                 }
                 if (error != null) Text(error, color = EColors.Danger, fontSize = 13.sp)
@@ -229,8 +222,9 @@ private fun Target(icon: androidx.compose.ui.graphics.vector.ImageVector, name: 
             .padding(start = (8 + depth * 18).dp, top = 10.dp, bottom = 10.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, tint = if (depth == 0 && icon == Icons.Outlined.Home) EColors.Accent else EColors.Amber, modifier = Modifier.size(20.dp))
-        Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 10.dp))
+        val alpha = if (enabled) 1f else 0.35f
+        Icon(icon, null, tint = (if (icon == Icons.Outlined.Home) EColors.Accent else EColors.Amber).copy(alpha = alpha), modifier = Modifier.size(20.dp))
+        Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, color = EColors.Text.copy(alpha = alpha), modifier = Modifier.padding(start = 10.dp))
     }
 }
 

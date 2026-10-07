@@ -81,9 +81,12 @@ class HomeViewModel @Inject constructor(
 
     fun startSelect() = _selection.update { it.copy(active = true) }
     fun toggleSelect(id: String) = _selection.update { s ->
-        SelectionState(true, if (id in s.ids) s.ids - id else s.ids + id)
+        s.copy(active = true, ids = if (id in s.ids) s.ids - id else s.ids + id)
     }
-    fun selectAll(ids: List<String>) = _selection.update { SelectionState(true, toggleAll(it.ids, ids)) }
+    fun toggleFolder(id: String) = _selection.update { s ->
+        s.copy(active = true, folders = if (id in s.folders) s.folders - id else s.folders + id)
+    }
+    fun selectAll(files: List<String>, folders: List<String>) = _selection.update { it.toggleAll(files, folders) }
     fun clearSelection() { _selection.value = SelectionState() }
 
     private fun selectedFiles(): List<FileEntity> = files.value.orEmpty().filter { it.id in _selection.value.ids }
