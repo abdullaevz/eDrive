@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Pin
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
@@ -115,6 +116,7 @@ fun EField(
     supporting: String? = null,
     isError: Boolean = false,
     enabled: Boolean = true,
+    numeric: Boolean = false,
 ) {
     var visible by remember { mutableStateOf(false) }
     OutlinedTextField(
@@ -131,7 +133,11 @@ fun EField(
         } else null,
         visualTransformation = if (password && !visible) PasswordVisualTransformation() else VisualTransformation.None,
         keyboardOptions = KeyboardOptions(
-            keyboardType = if (password) KeyboardType.Password else KeyboardType.Text,
+            keyboardType = when {
+                numeric -> KeyboardType.NumberPassword
+                password -> KeyboardType.Password
+                else -> KeyboardType.Text
+            },
             imeAction = imeAction, autoCorrectEnabled = false,
         ),
         singleLine = true,
@@ -150,6 +156,30 @@ fun EField(
         modifier = modifier.fillMaxWidth(),
     )
 }
+
+/** 4 rəqəmli PIN sahəsi: yalnız rəqəm qəbul edir, uzunluq [length]-dən artıq olmur. */
+@Composable
+fun PinField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    length: Int = 4,
+    imeAction: ImeAction = ImeAction.Next,
+    isError: Boolean = false,
+    enabled: Boolean = true,
+) = EField(
+    value = value,
+    onValueChange = { v -> onValueChange(v.filter(Char::isDigit).take(length)) },
+    label = label,
+    leading = Icons.Outlined.Pin,
+    modifier = modifier,
+    password = true,
+    imeAction = imeAction,
+    isError = isError,
+    enabled = enabled,
+    numeric = true,
+)
 
 @Composable
 fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, loading: Boolean = false, enabled: Boolean = true, icon: ImageVector? = null) {

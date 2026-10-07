@@ -67,7 +67,7 @@ class GoogleDriveClient(
         do {
             val url = "$base/files".toHttpUrl().newBuilder()
                 .addQueryParameter("q", "'$parentId' in parents and trashed = false")
-                .addQueryParameter("fields", "nextPageToken,files(id,name,size)")
+                .addQueryParameter("fields", "nextPageToken,files(id,name,size,mimeType)")
                 .addQueryParameter("pageSize", "1000")
                 .apply { page?.let { addQueryParameter("pageToken", it) } }
                 .build().toString()
@@ -76,6 +76,15 @@ class GoogleDriveClient(
             page = res.nextPageToken
         } while (page != null)
         return all
+    }
+
+    override suspend fun move(fileId: String, fromParentId: String, toParentId: String) {
+        val url = "$base/files/$fileId".toHttpUrl().newBuilder()
+            .addQueryParameter("addParents", toParentId)
+            .addQueryParameter("removeParents", fromParentId)
+            .addQueryParameter("fields", "id")
+            .build().toString()
+        execute(Request.Builder().url(url).patch("{}".toRequestBody(JSON))).close()
     }
 
     /** Kiçik fayllar (meta, vault.json) — multipart yükləmə. `existingId` verilsə, fayl yenilənir. */

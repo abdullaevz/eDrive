@@ -17,6 +17,8 @@ interface DriveClient {
     /** Qovluq varsa onun ID-sini, yoxdursa yaradıb ID-sini qaytarır. */
     suspend fun ensureFolder(name: String, parentId: String?): String
     suspend fun listChildren(parentId: String): List<DriveFile>
+    /** Faylı/qovluğu bir qovluqdan digərinə köçürür (məzmun dəyişmir, ID eyni qalır). */
+    suspend fun move(fileId: String, fromParentId: String, toParentId: String)
     /** Kiçik fayllar (manifest, vault.json). `existingId` verilsə, mövcud fayl yenilənir. */
     suspend fun uploadSmall(name: String, parentId: String, bytes: ByteArray, mime: String, existingId: String? = null): DriveFile
     /** Böyük fayllar — axınla, yaddaşa tam yüklənmədən. */
@@ -59,10 +61,15 @@ sealed interface AuthResult {
     data class NeedsConsent(val pendingIntent: PendingIntent) : AuthResult
 }
 
-/** Drive-da eDrive-ın qovluq quruluşu. */
+/**
+ * Drive-da eDrive-ın quruluşu: `eDrive Storage/vault.json` və şifrəli fayllar kökdə,
+ * istifadəçinin yaratdığı alt qovluqlar (adları açıq mətn) kökün altında.
+ */
 object DriveLayout {
     const val ROOT_FOLDER = "eDrive Storage"
     const val VAULT_FILE = "vault.json"
+    /** Sinxronlaşma və qovluq yaratma üçün maksimum iç-içə səviyyə (kök sayılmır). */
+    const val MAX_DEPTH = 5
     fun dataName(id: String) = "$id.edrv"
     fun metaName(id: String) = "$id.meta"
 }
@@ -72,7 +79,9 @@ class DriveException(val code: Int, message: String) : Exception(message)
 /** Google hesabı seçimi və ya icazə tələb olunur — UI PendingIntent-i açmalıdır. */
 class DriveConsentRequired(val pendingIntent: PendingIntent) : Exception("Google Drive icazəsi tələb olunur")
 
-@Serializable data class DriveFile(val id: String, val name: String, val size: String? = null, val mimeType: String? = null)
+@Serializable data class DriveFile(val id: String, val name: String, val size: String? = null, val mimeType: String? = null) {
+    val isFolder: Boolean get() = mimeType == DriveClient.FOLDER_MIME
+}
 @Serializable data class DriveFileList(val files: List<DriveFile> = emptyList(), val nextPageToken: String? = null)
 @Serializable data class DriveAbout(val user: DriveUser)
 @Serializable data class DriveUser(val emailAddress: String, val displayName: String? = null)

@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onRoot
 import com.edrive.app.data.db.entity.FileEntity
 import com.edrive.app.data.db.entity.FileStatus
 import com.edrive.app.data.db.entity.UserEntity
+import com.edrive.app.ui.auth.AuthActions
 import com.edrive.app.ui.auth.AuthContent
 import com.edrive.app.ui.auth.AuthMode
 import com.edrive.app.ui.auth.AuthState
@@ -51,24 +52,24 @@ class ScreenshotTest {
     }
 
     private val noop: () -> Unit = {}
-    private val users = listOf(KnownUser(1, "natiq", true), KnownUser(2, "test", false))
+    private val users = listOf(KnownUser(1, "natiq", biometric = true, legacy = false), KnownUser(2, "köhnə", biometric = false, legacy = true))
 
     @Composable
-    private fun auth(state: AuthState, users: List<KnownUser> = this.users) { AuthContent(
-        state, users, biometricForSelected = true, biometricAvailable = true,
-        onUsername = {}, onPassword = {}, onConfirm = {}, onMode = {}, onLogin = noop, onRegister = noop,
-        onBiometric = noop, onSaveRecovery = noop, onToggleBiometric = {}, onFinish = noop,
-    ) }
+    private fun auth(state: AuthState, users: List<KnownUser> = this.users) = AuthContent(
+        state, users, selected = users.firstOrNull { it.username == state.username }, biometricAvailable = true, actions = AuthActions(),
+    )
 
-    @Test fun login() = shot("1-login") { auth(AuthState(username = "natiq", password = "salam12345")) }
+    @Test fun login() = shot("1-login") { auth(AuthState(username = "natiq", pin = "48")) }
 
     @Test fun register() = shot("2-register") {
-        auth(AuthState(mode = AuthMode.REGISTER, username = "natiq", password = "salam12", confirm = ""), emptyList())
+        auth(AuthState(mode = AuthMode.REGISTER, username = "natiq", pin = "4826", pinConfirm = ""), emptyList())
     }
 
-    @Test fun recovery() = shot("3-recovery") {
-        auth(AuthState(mode = AuthMode.RECOVERY, username = "natiq", password = "salam12345", recoverySavedAs = "eDrive-natiq-berpa.pdf", enableBiometricAfter = true))
+    @Test fun pinDocument() = shot("3-pin-document") {
+        auth(AuthState(mode = AuthMode.PIN_DOCUMENT, username = "natiq", pin = "4826", pinPdfSavedAs = "eDrive-natiq-PIN.pdf", enableBiometricAfter = true))
     }
+
+    @Test fun legacyMigration() = shot("3b-legacy") { auth(AuthState(username = "köhnə", legacyPassword = "salam12345")) }
 
     private val user = UserEntity(1, "natiq", createdAt = 1759600000000, headerJson = "{}", driveEmail = "natiq@gmail.com", driveRootFolderId = "r", biometricEnabled = true)
 

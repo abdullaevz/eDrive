@@ -6,6 +6,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import android.content.Context
 import android.net.Uri
 import com.edrive.app.data.Session
+import com.edrive.app.data.VaultLockedException
 import com.edrive.app.data.db.dao.FileDao
 import com.edrive.app.data.db.entity.FileEntity
 import com.edrive.app.data.db.entity.FileStatus
@@ -37,18 +38,20 @@ class ImportService @Inject constructor(
     private val store: LocalVaultStore,
     private val uploads: UploadScheduler,
 ) {
-    suspend fun import(uris: List<Uri>) = withContext(Dispatchers.IO) {
+    /** @param folderId hədəf qovluq (Drive ID), `null` — kök */
+    suspend fun import(uris: List<Uri>, folderId: String? = null) = withContext(Dispatchers.IO) {
         val s = session.requireUser()
+        if (!s.hasVault) throw VaultLockedException() // vault olmadan heç bir sətir yaradılmır
         for (uri in uris) {
             val picked = Media.describe(context.contentResolver, uri)
             val id = UUID.randomUUID().toString().replace("-", "")
             val now = System.currentTimeMillis()
             files.upsert(
                 FileEntity(id = id, userId = s.userId, name = picked.name, mimeType = picked.mimeType,
-                    size = picked.size, createdAt = now, status = FileStatus.ENCRYPTING),
+                    size = picked.size, createdAt = now, status = FileStatus.ENCRYPTING, folderId = folderId),
             )
             try {
-                encryptToOutbox(s.userId, id, picked, now)
+                encryptToOutbox(s.userId, id, picked, now, folderId)
             } catch (e: Exception) {
                 store.outboxData(s.userId, id).delete()
                 store.outboxMeta(s.userId, id).delete()
@@ -58,7 +61,7 @@ class ImportService @Inject constructor(
         uploads.schedule()
     }
 
-    private suspend fun encryptToOutbox(userId: Long, id: String, picked: PickedFile, now: Long) {
+    private suspend fun encryptToOutbox(userId: Long, id: String, picked: PickedFile, now: Long, folderId: String?) {
         val dek = session.requireKey()
         try {
             val thumb = Media.thumbnail(context, picked)
@@ -84,7 +87,7 @@ class ImportService @Inject constructor(
             files.upsert(
                 FileEntity(id = id, userId = userId, name = picked.name, mimeType = picked.mimeType,
                     size = result.plaintextBytes, createdAt = now, width = manifest.width, height = manifest.height,
-                    hasThumb = thumb != null, status = FileStatus.PENDING),
+                    hasThumb = thumb != null, status = FileStatus.PENDING, folderId = folderId),
             )
         } finally {
             dek.wipe()

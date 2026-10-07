@@ -107,6 +107,11 @@ import com.edrive.app.ui.components.EField
 import com.edrive.app.ui.components.FileInfoDialog
 import com.edrive.app.ui.components.PrimaryButton
 import com.edrive.app.ui.components.StatusDot
+import com.edrive.app.ui.drive.DisconnectDialog
+import com.edrive.app.ui.drive.DriveEvent
+import com.edrive.app.ui.drive.DriveViewModel
+import com.edrive.app.ui.drive.KeyDocumentDialog
+import com.edrive.app.ui.drive.SecurityKeyDialog
 import com.edrive.app.ui.findActivity
 import com.edrive.app.ui.theme.EColors
 import com.edrive.app.util.formatBytes
@@ -114,10 +119,17 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Unit = {}, onOpen: (String) -> Unit) {
+fun HomeRoute(
+    vm: HomeViewModel,
+    driveVm: DriveViewModel,
+    diagnostics: () -> String,
+    onGallery: () -> Unit = {},
+    onOpen: (String) -> Unit,
+) {
     val user by vm.user.collectAsState()
     val files by vm.files.collectAsState()
     val ui by vm.ui.collectAsState()
+    val drive by driveVm.ui.collectAsState()
     val selection by vm.selection.collectAsState()
     val context = LocalContext.current
     val activity = context.findActivity()
@@ -137,14 +149,18 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Uni
     }
 
     val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
-        vm.endExternalUi()
-        if (r.resultCode == android.app.Activity.RESULT_OK) vm.onConsentResult(r.data)
+        driveVm.endExternalUi()
+        if (r.resultCode == android.app.Activity.RESULT_OK) driveVm.onConsentResult(r.data)
     }
     val pickAccount = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-        vm.endExternalUi()
+        driveVm.endExternalUi()
         if (r.resultCode == android.app.Activity.RESULT_OK) {
-            vm.onAccountPicked(r.data?.getStringExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME))
+            driveVm.onAccountPicked(r.data?.getStringExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME))
         }
+    }
+    val saveKeyPdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        driveVm.endExternalUi()
+        if (uri != null) driveVm.saveKeyDocument(context, uri)
     }
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(100)) { uris ->
         vm.endExternalUi()
@@ -171,7 +187,15 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Uni
         vm.events.collect { e ->
             when (e) {
                 is HomeEvent.Message -> scope.launch { snackbar.showSnackbar(e.text) }
-                is HomeEvent.PickAccount -> pickAccount.launch(
+                is HomeEvent.LaunchConsent -> consent.launch(IntentSenderRequest.Builder(e.pendingIntent.intentSender).build())
+            }
+        }
+    }
+    LaunchedEffect(Unit) {
+        driveVm.events.collect { e ->
+            when (e) {
+                is DriveEvent.Message -> scope.launch { snackbar.showSnackbar(e.text) }
+                is DriveEvent.PickAccount -> pickAccount.launch(
                     com.google.android.gms.common.AccountPicker.newChooseAccountIntent(
                         com.google.android.gms.common.AccountPicker.AccountChooserOptions.Builder()
                             .setAllowableAccountsTypes(listOf("com.google"))
@@ -179,7 +203,7 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Uni
                             .build(),
                     ),
                 )
-                is HomeEvent.LaunchConsent -> consent.launch(IntentSenderRequest.Builder(e.pendingIntent.intentSender).build())
+                is DriveEvent.LaunchConsent -> consent.launch(IntentSenderRequest.Builder(e.pendingIntent.intentSender).build())
             }
         }
     }
@@ -189,12 +213,13 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Uni
         user = user,
         files = files,
         ui = ui,
+        driveBusy = drive.busy,
         snackbar = snackbar,
         loadThumb = vm::thumbnail,
         onAccount = { showAccount = true },
         onLock = vm::lock,
         onSync = { vm.sync() },
-        onConnect = vm::connectDrive,
+        onConnect = driveVm::connect,
         onUpload = {
             if (user?.isDriveReady != true) scope.launch { snackbar.showSnackbar("Əvvəlcə Google Drive-a qoşulun") }
             else showPicker = true
@@ -289,13 +314,14 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Uni
                 username = vm.username,
                 user = user,
                 files = files.orEmpty(),
-                driveBusy = ui.driveBusy,
+                driveBusy = drive.busy,
                 syncing = ui.syncing,
-                biometricAvailable = vm.biometricAvailable,
-                onConnect = vm::connectDrive,
-                onDisconnect = vm::disconnectDrive,
+                biometricAvailable = driveVm.biometricAvailable,
+                onConnect = driveVm::connect,
+                onDisconnect = { showAccount = false; driveVm.requestDisconnect() },
                 onSync = { vm.sync() },
-                onBiometric = { on -> if (on) vm.enableBiometric(activity) else vm.disableBiometric() },
+                onBiometric = { on -> driveVm.setBiometric(activity, on) },
+                onChangeKey = { showAccount = false; driveVm.startKeyChange() },
                 onLock = { showAccount = false; vm.lock() },
                 onExportLog = {
                     vm.beginExternalUi()
@@ -305,11 +331,24 @@ fun HomeRoute(vm: HomeViewModel, diagnostics: () -> String, onGallery: () -> Uni
         }
     }
 
-    ui.remoteVault?.let {
-        RemoteVaultDialog(
-            busy = ui.driveBusy, error = ui.remotePasswordError,
-            onSubmit = vm::submitRemotePassword, onCancel = vm::cancelRemotePassword,
+    drive.prompt?.let { prompt ->
+        // key(prompt) — hər yeni sorğuda sahələr sıfırlanır
+        androidx.compose.runtime.key(prompt) {
+            SecurityKeyDialog(prompt, drive.busy, drive.promptError, onSubmit = driveVm::submitKey, onCancel = driveVm::cancelPrompt)
+        }
+    }
+    if (drive.keyDocumentPending) {
+        KeyDocumentDialog(
+            savedAs = drive.keyDocumentSavedAs,
+            onSave = {
+                driveVm.beginExternalUi()
+                saveKeyPdf.launch("eDrive-tehlukesizlik-acari.pdf")
+            },
+            onClose = driveVm::closeKeyDocument,
         )
+    }
+    drive.disconnectUnsynced?.let { n ->
+        DisconnectDialog(n, onConfirm = driveVm::disconnect, onCancel = driveVm::cancelDisconnect)
     }
 }
 
@@ -320,6 +359,7 @@ fun HomeContent(
     user: UserEntity?,
     files: List<FileEntity>?,
     ui: HomeUi,
+    driveBusy: Boolean = false,
     snackbar: SnackbarHostState,
     loadThumb: suspend (String) -> ImageBitmap?,
     onAccount: () -> Unit,
@@ -426,7 +466,7 @@ fun HomeContent(
                 SummaryHeader(list, connected, username)
             }
             if (!connected) {
-                item(span = { GridItemSpan(maxLineSpan) }) { ConnectCard(ui.driveBusy, onConnect) }
+                item(span = { GridItemSpan(maxLineSpan) }) { ConnectCard(driveBusy, onConnect) }
             }
             if (files != null && list.isEmpty() && connected) {
                 item(span = { GridItemSpan(maxLineSpan) }) { EmptyState() }
@@ -640,28 +680,4 @@ private fun ChooserRow(icon: ImageVector, title: String, subtitle: String, onCli
             Text(subtitle, color = EColors.Muted, fontSize = 13.sp)
         }
     }
-}
-
-@Composable
-private fun RemoteVaultDialog(busy: Boolean, error: String?, onSubmit: (String) -> Unit, onCancel: () -> Unit) {
-    var pw by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = {},
-        containerColor = EColors.Bg2,
-        title = { Text("Drive-da mövcud vault tapıldı") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "Bu Google hesabında bu istifadəçi adı ilə əvvəllər yaradılmış şifrəli fayllar var. " +
-                        "Onları açmaq üçün həmin vault-un parolunu daxil edin.",
-                    color = EColors.Muted, fontSize = 14.sp,
-                )
-                EField(pw, { pw = it }, "Vault parolu", Icons.Outlined.Lock, password = true, isError = error != null)
-                if (error != null) Text(error, color = EColors.Danger, fontSize = 13.sp)
-                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = EColors.Accent)
-            }
-        },
-        confirmButton = { TextButton(onClick = { onSubmit(pw) }, enabled = !busy && pw.length >= 8) { Text("Aç", color = EColors.Accent) } },
-        dismissButton = { TextButton(onClick = onCancel, enabled = !busy) { Text("Ləğv et", color = EColors.Muted) } },
-    )
 }

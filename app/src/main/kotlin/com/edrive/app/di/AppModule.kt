@@ -7,6 +7,7 @@ import com.edrive.app.data.db.Migrations
 import com.edrive.app.data.db.dao.FileDao
 import com.edrive.app.data.db.dao.FolderDao
 import com.edrive.app.data.db.dao.UserDao
+import com.edrive.app.util.Clock
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -56,6 +57,9 @@ object AppModule {
 
     @Provides
     fun folderDao(db: AppDatabase): FolderDao = db.folders()
+
+    @Provides
+    fun clock(): Clock = Clock.SYSTEM
 
     @Provides
     @Singleton

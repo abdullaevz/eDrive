@@ -29,11 +29,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -62,9 +61,10 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
-import com.edrive.app.data.AccountRepository
+import com.edrive.app.data.PinPolicy
 import com.edrive.app.ui.components.Chip
 import com.edrive.app.ui.components.EField
+import com.edrive.app.ui.components.PinField
 import com.edrive.app.ui.components.PrimaryButton
 import com.edrive.app.ui.components.VaultMark
 import com.edrive.app.ui.findActivity
@@ -92,7 +92,7 @@ fun AuthRoute(vm: AuthViewModel = hiltViewModel()) {
 
     val createPdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         vm.endExternalUi()
-        if (uri != null) vm.saveRecovery(context, uri)
+        if (uri != null) vm.savePinDocument(context, uri)
     }
 
     val users = loadedUsers ?: return
@@ -101,42 +101,53 @@ fun AuthRoute(vm: AuthViewModel = hiltViewModel()) {
     AuthContent(
         state = state,
         users = users,
-        biometricForSelected = selected?.biometric == true && vm.biometricAvailable,
+        selected = selected,
         biometricAvailable = vm.biometricAvailable,
-        onUsername = vm::setUsername,
-        onPassword = vm::setPassword,
-        onConfirm = vm::setConfirm,
-        onMode = vm::setMode,
-        onLogin = vm::login,
-        onRegister = vm::register,
-        onBiometric = { selected?.let { vm.biometricLogin(activity, it.id) } },
-        onSaveRecovery = {
-            vm.beginExternalUi()
-            createPdf.launch("eDrive-${state.username}-berpa.pdf")
-        },
-        onToggleBiometric = vm::setEnableBiometric,
-        onToggleRecoveryPdf = vm::setSaveRecoveryPdf,
-        onFinish = { vm.finishRegistration(activity) },
+        actions = AuthActions(
+            onUsername = vm::setUsername,
+            onPin = vm::setPin,
+            onPinConfirm = vm::setPinConfirm,
+            onLegacyPassword = vm::setLegacyPassword,
+            onMode = vm::setMode,
+            onLogin = vm::login,
+            onMigrateLegacy = vm::migrateLegacy,
+            onRegister = vm::register,
+            onBiometric = { selected?.let { vm.biometricLogin(activity, it.id) } },
+            onSavePinPdf = {
+                vm.beginExternalUi()
+                createPdf.launch("eDrive-${state.username}-PIN.pdf")
+            },
+            onToggleSavePinPdf = vm::setSavePinPdf,
+            onToggleBiometric = vm::setEnableBiometric,
+            onFinish = { vm.finishRegistration(activity) },
+        ),
     )
 }
+
+/** Giriş ekranının bütün hadisələri — ekran ViewModel-dən asılı olmasın (önizləmə və ekran testləri üçün). */
+class AuthActions(
+    val onUsername: (String) -> Unit = {},
+    val onPin: (String) -> Unit = {},
+    val onPinConfirm: (String) -> Unit = {},
+    val onLegacyPassword: (String) -> Unit = {},
+    val onMode: (AuthMode) -> Unit = {},
+    val onLogin: () -> Unit = {},
+    val onMigrateLegacy: () -> Unit = {},
+    val onRegister: () -> Unit = {},
+    val onBiometric: () -> Unit = {},
+    val onSavePinPdf: () -> Unit = {},
+    val onToggleSavePinPdf: (Boolean) -> Unit = {},
+    val onToggleBiometric: (Boolean) -> Unit = {},
+    val onFinish: () -> Unit = {},
+)
 
 @Composable
 fun AuthContent(
     state: AuthState,
     users: List<KnownUser>,
-    biometricForSelected: Boolean,
+    selected: KnownUser?,
     biometricAvailable: Boolean,
-    onUsername: (String) -> Unit,
-    onPassword: (String) -> Unit,
-    onConfirm: (String) -> Unit,
-    onMode: (AuthMode) -> Unit,
-    onLogin: () -> Unit,
-    onRegister: () -> Unit,
-    onBiometric: () -> Unit,
-    onSaveRecovery: () -> Unit,
-    onToggleBiometric: (Boolean) -> Unit,
-    onFinish: () -> Unit,
-    onToggleRecoveryPdf: (Boolean) -> Unit = {},
+    actions: AuthActions,
 ) {
     Box(
         Modifier.fillMaxSize()
@@ -157,10 +168,11 @@ fun AuthContent(
             Spacer(Modifier.height(14.dp))
             Text("eDrive", style = MaterialTheme.typography.headlineMedium)
             Text(
-                when (state.mode) {
-                    AuthMode.LOGIN -> "Şifrəli diskinizə daxil olun"
-                    AuthMode.REGISTER -> "Yeni şifrəli vault yaradın"
-                    AuthMode.RECOVERY -> "Son addım: bərpa sənədi"
+                when {
+                    state.mode == AuthMode.REGISTER -> "Yeni hesab yaradın"
+                    state.mode == AuthMode.PIN_DOCUMENT -> "Son addım: PIN sənədi"
+                    selected?.legacy == true -> "Yeni versiyaya keçid"
+                    else -> "PIN ilə daxil olun"
                 },
                 color = EColors.Muted, modifier = Modifier.padding(top = 4.dp),
             )
@@ -168,9 +180,9 @@ fun AuthContent(
 
             AnimatedContent(state.mode, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "mode") { mode ->
                 when (mode) {
-                    AuthMode.LOGIN -> LoginForm(state, users, biometricForSelected, onUsername, onPassword, onLogin, onBiometric, onMode)
-                    AuthMode.REGISTER -> RegisterForm(state, onUsername, onPassword, onConfirm, onRegister, onMode, hasUsers = users.isNotEmpty())
-                    AuthMode.RECOVERY -> RecoveryStep(state, biometricAvailable, onSaveRecovery, onToggleBiometric, onFinish, onToggleRecoveryPdf)
+                    AuthMode.LOGIN -> LoginForm(state, users, selected, actions)
+                    AuthMode.REGISTER -> RegisterForm(state, actions, hasUsers = users.isNotEmpty())
+                    AuthMode.PIN_DOCUMENT -> PinDocumentStep(state, biometricAvailable, actions)
                 }
             }
 
@@ -190,16 +202,7 @@ private fun ErrorText(error: String?) {
 }
 
 @Composable
-private fun LoginForm(
-    state: AuthState,
-    users: List<KnownUser>,
-    biometric: Boolean,
-    onUsername: (String) -> Unit,
-    onPassword: (String) -> Unit,
-    onLogin: () -> Unit,
-    onBiometric: () -> Unit,
-    onMode: (AuthMode) -> Unit,
-) {
+private fun LoginForm(state: AuthState, users: List<KnownUser>, selected: KnownUser?, actions: AuthActions) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (users.isNotEmpty()) {
             Text("BU CİHAZDAKI HESABLAR", style = MaterialTheme.typography.labelSmall, color = EColors.Faint)
@@ -207,7 +210,7 @@ private fun LoginForm(
                 users.forEach { u ->
                     FilterChip(
                         selected = u.username.equals(state.username, true),
-                        onClick = { onUsername(u.username) },
+                        onClick = { actions.onUsername(u.username) },
                         label = { Text(u.username) },
                         leadingIcon = if (u.biometric) { { Icon(Icons.Outlined.Fingerprint, null, Modifier.size(16.dp)) } } else null,
                         colors = FilterChipDefaults.filterChipColors(
@@ -218,60 +221,75 @@ private fun LoginForm(
                 }
             }
         }
-        EField(state.username, onUsername, "İstifadəçi adı", Icons.Outlined.Person, enabled = !state.busy)
-        EField(state.password, onPassword, "Parol", Icons.Outlined.Lock, password = true, imeAction = ImeAction.Done, isError = state.error != null, enabled = !state.busy)
-        ErrorText(state.error)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            PrimaryButton(
-                "Daxil ol", onLogin, Modifier.weight(1f), loading = state.busy,
-                enabled = state.username.isNotBlank() && state.password.length >= AccountRepository.MIN_PASSWORD,
-            )
-            if (biometric) {
-                OutlinedButton(
-                    onClick = onBiometric, enabled = !state.busy, shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.size(52.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-                ) { Icon(Icons.Outlined.Fingerprint, "Barmaq izi ilə daxil ol", tint = EColors.Accent, modifier = Modifier.size(26.dp)) }
+        EField(state.username, actions.onUsername, "İstifadəçi adı", Icons.Outlined.Person, enabled = !state.busy)
+        if (selected?.legacy == true) {
+            LegacyFields(state, actions)
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                PinField(
+                    state.pin, actions.onPin, "PIN", Modifier.weight(1f),
+                    imeAction = ImeAction.Done, isError = state.error != null, enabled = !state.busy,
+                )
+                if (selected?.biometric == true) {
+                    OutlinedButton(
+                        onClick = actions.onBiometric, enabled = !state.busy, shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.size(56.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                    ) { Icon(Icons.Outlined.Fingerprint, "Barmaq izi ilə daxil ol", tint = EColors.Accent, modifier = Modifier.size(26.dp)) }
+                }
             }
+            ErrorText(state.error)
+            PrimaryButton(
+                "Daxil ol", actions.onLogin, loading = state.busy,
+                enabled = state.username.isNotBlank() && state.pin.length == PinPolicy.LENGTH,
+            )
         }
-        TextButton(onClick = { onMode(AuthMode.REGISTER) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+        TextButton(onClick = { actions.onMode(AuthMode.REGISTER) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
             Text("Yeni hesab yarat", color = EColors.Accent)
         }
     }
 }
 
+/** 1.x hesabı: köhnə parol bir dəfə soruşulur və yeni PIN təyin edilir. Vault və fayllar dəyişmir. */
 @Composable
-private fun RegisterForm(
-    state: AuthState,
-    onUsername: (String) -> Unit,
-    onPassword: (String) -> Unit,
-    onConfirm: (String) -> Unit,
-    onRegister: () -> Unit,
-    onMode: (AuthMode) -> Unit,
-    hasUsers: Boolean,
-) {
-    val len = state.password.length
-    val ok = len >= AccountRepository.MIN_PASSWORD
+private fun LegacyFields(state: AuthState, actions: AuthActions) {
+    InfoBox(
+        Icons.Outlined.Info, EColors.Accent,
+        "Yeni versiyada proqram 4 rəqəmli PIN ilə açılır. Köhnə parolunuz isə artıq \"Təhlükəsizlik açarı\"dır — " +
+            "o, fayllarınızı qoruyur və yalnız Drive-a yeni cihazdan qoşulanda soruşulur.",
+    )
+    EField(state.legacyPassword, actions.onLegacyPassword, "Köhnə parol", Icons.Outlined.Key, password = true, enabled = !state.busy)
+    PinField(state.pin, actions.onPin, "Yeni PIN (4 rəqəm)", enabled = !state.busy)
+    PinField(
+        state.pinConfirm, actions.onPinConfirm, "PIN-i təkrarlayın", imeAction = ImeAction.Done, enabled = !state.busy,
+        isError = state.pinConfirm.length == PinPolicy.LENGTH && state.pinConfirm != state.pin,
+    )
+    ErrorText(state.error)
+    PrimaryButton(
+        "Keçidi tamamla", actions.onMigrateLegacy, loading = state.busy,
+        enabled = state.legacyPassword.isNotEmpty() && state.pin.length == PinPolicy.LENGTH && state.pinConfirm == state.pin,
+    )
+}
+
+@Composable
+private fun RegisterForm(state: AuthState, actions: AuthActions, hasUsers: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        EField(state.username, onUsername, "İstifadəçi adı", Icons.Outlined.Person, enabled = !state.busy)
-        EField(
-            state.password, onPassword, "Master parol", Icons.Outlined.Key, password = true, enabled = !state.busy,
-            supporting = if (ok) "✓ $len simvol" else "Ən azı ${AccountRepository.MIN_PASSWORD} simvol ($len/${AccountRepository.MIN_PASSWORD})",
-        )
-        EField(
-            state.confirm, onConfirm, "Parolu təkrarlayın", Icons.Outlined.Lock, password = true, imeAction = ImeAction.Done,
-            enabled = !state.busy, isError = state.confirm.isNotEmpty() && state.confirm != state.password,
+        EField(state.username, actions.onUsername, "İstifadəçi adı", Icons.Outlined.Person, enabled = !state.busy)
+        PinField(state.pin, actions.onPin, "PIN (4 rəqəm)", enabled = !state.busy)
+        PinField(
+            state.pinConfirm, actions.onPinConfirm, "PIN-i təkrarlayın", imeAction = ImeAction.Done, enabled = !state.busy,
+            isError = state.pinConfirm.length == PinPolicy.LENGTH && state.pinConfirm != state.pin,
         )
         InfoBox(
-            Icons.Outlined.WarningAmber, EColors.Amber,
-            "Bu parol fayllarınızı şifrələyən açara çevriləcək və heç yerdə saxlanılmayacaq. Növbəti addımda bərpa sənədini yükləyəcəksiniz.",
+            Icons.Outlined.Info, EColors.Accent,
+            "PIN yalnız bu telefonda proqramı açır. Fayllarınızı qoruyan Təhlükəsizlik açarını Google Drive-a qoşulanda təyin edəcəksiniz.",
         )
         ErrorText(state.error)
         PrimaryButton(
-            "Hesab yarat", onRegister, loading = state.busy,
-            enabled = state.username.length >= 3 && ok && state.confirm == state.password,
+            "Hesab yarat", actions.onRegister, loading = state.busy,
+            enabled = state.username.length >= 3 && state.pin.length == PinPolicy.LENGTH && state.pinConfirm == state.pin,
         )
         if (hasUsers) {
-            TextButton(onClick = { onMode(AuthMode.LOGIN) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            TextButton(onClick = { actions.onMode(AuthMode.LOGIN) }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                 Text("Artıq hesabım var", color = EColors.Accent)
             }
         }
@@ -279,16 +297,9 @@ private fun RegisterForm(
 }
 
 @Composable
-private fun RecoveryStep(
-    state: AuthState,
-    biometricAvailable: Boolean,
-    onSave: () -> Unit,
-    onToggleBiometric: (Boolean) -> Unit,
-    onFinish: () -> Unit,
-    onToggleRecoveryPdf: (Boolean) -> Unit,
-) {
-    val saved = state.recoverySavedAs != null
-    val wantPdf = state.saveRecoveryPdf
+private fun PinDocumentStep(state: AuthState, biometricAvailable: Boolean, actions: AuthActions) {
+    val saved = state.pinPdfSavedAs != null
+    val wantPdf = state.savePinPdf
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(EColors.Surface)
@@ -297,64 +308,51 @@ private fun RecoveryStep(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(Icons.Outlined.Shield, null, tint = EColors.Accent)
-                Text("Parolu itirməyin", style = MaterialTheme.typography.titleMedium)
+                Text("PIN-i yadda saxlayın", style = MaterialTheme.typography.titleMedium)
             }
             Text(
-                "Parol unudulsa, Google Drive-dakı şifrəli fayllar həmişəlik açılmaz olur. " +
-                    "İstifadəçi adı və parol olan PDF sənədini təhlükəsiz yerə saxlayın.",
+                "PIN heç yerdə açıq saxlanılmır. İstifadəçi adı və PIN olan sənədi gizli yerdə saxlayın.",
                 color = EColors.Muted, fontSize = 14.sp,
             )
             KeyValue("İstifadəçi", state.username)
-            KeyValue("Parol", "•".repeat(state.password.length.coerceAtMost(16)))
+            KeyValue("PIN", "•".repeat(state.pin.length))
         }
-        Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(EColors.Surface).padding(horizontal = 14.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Outlined.Download, null, tint = EColors.Accent)
-            Text("Bərpa sənədini (PDF) saxla", Modifier.weight(1f).padding(start = 12.dp))
-            Switch(
-                checked = wantPdf, onCheckedChange = onToggleRecoveryPdf, enabled = !state.busy,
-                colors = SwitchDefaults.colors(checkedTrackColor = EColors.Accent, checkedThumbColor = EColors.AccentInk),
-            )
-        }
+        SwitchRow(Icons.Outlined.Download, "PIN sənədini (PDF) saxla", wantPdf, actions.onToggleSavePinPdf, enabled = !state.busy)
         if (wantPdf) {
-            if (saved) {
-                InfoBox(Icons.Outlined.CheckCircle, EColors.Accent, "Saxlanıldı: ${state.recoverySavedAs}")
-            }
+            if (saved) InfoBox(Icons.Outlined.CheckCircle, EColors.Accent, "Saxlanıldı: ${state.pinPdfSavedAs}")
             OutlinedButton(
-                onClick = onSave, enabled = !state.busy, shape = RoundedCornerShape(12.dp),
+                onClick = actions.onSavePinPdf, enabled = !state.busy, shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
                 Icon(Icons.Outlined.Download, null, tint = EColors.Accent)
                 Spacer(Modifier.size(8.dp))
-                Text(if (saved) "Yenidən saxla" else "Bərpa sənədini yüklə (PDF)", color = EColors.Text)
+                Text(if (saved) "Yenidən saxla" else "PIN sənədini yüklə (PDF)", color = EColors.Text)
             }
-        } else {
-            InfoBox(
-                Icons.Outlined.WarningAmber, EColors.Amber,
-                "Sənəd saxlanılmayacaq. Parolu itirsəniz, fayllarınızı heç bir yolla bərpa etmək mümkün olmayacaq.",
-            )
         }
         if (biometricAvailable) {
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(EColors.Surface).padding(horizontal = 14.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Outlined.Fingerprint, null, tint = EColors.Accent)
-                Text("Barmaq izi ilə giriş", Modifier.weight(1f).padding(start = 12.dp))
-                Switch(
-                    checked = state.enableBiometricAfter, onCheckedChange = onToggleBiometric,
-                    colors = SwitchDefaults.colors(checkedTrackColor = EColors.Accent, checkedThumbColor = EColors.AccentInk),
-                )
-            }
+            SwitchRow(Icons.Outlined.Fingerprint, "Barmaq izi ilə giriş", state.enableBiometricAfter, actions.onToggleBiometric)
         }
         ErrorText(state.error)
-        PrimaryButton("Davam et", onFinish, enabled = saved || !wantPdf, loading = state.busy)
+        PrimaryButton("Davam et", actions.onFinish, enabled = saved || !wantPdf, loading = state.busy)
         if (wantPdf && !saved) {
             Text("Davam etmək üçün əvvəlcə sənədi saxlayın", color = EColors.Faint, fontSize = 12.sp,
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
+    }
+}
+
+@Composable
+private fun SwitchRow(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(EColors.Surface).padding(horizontal = 14.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = EColors.Accent)
+        Text(text, Modifier.weight(1f).padding(start = 12.dp))
+        Switch(
+            checked = checked, onCheckedChange = onChange, enabled = enabled,
+            colors = SwitchDefaults.colors(checkedTrackColor = EColors.Accent, checkedThumbColor = EColors.AccentInk),
+        )
     }
 }
 
