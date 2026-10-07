@@ -1,6 +1,6 @@
 # eDrive — İstifadə şərtləri
 
-Son yenilənmə: 2026-10-05
+Son yenilənmə: 2026-10-07
 
 eDrive tətbiqini quraşdırmaqla və ya istifadə etməklə bu şərtlərlə razılaşırsınız.
 
@@ -8,11 +8,13 @@ eDrive tətbiqini quraşdırmaqla və ya istifadə etməklə bu şərtlərlə ra
 
 eDrive fayllarınızı telefonda şifrələyib **sizin öz Google Drive hesabınıza** yükləyən açıq mənbəli tətbiqdir. Tətbiqin öz serveri və ya istifadəçi hesabları sistemi yoxdur. Məlumatların necə işləndiyi [Məxfilik siyasətində](PRIVACY.md) izah olunub.
 
-## 2. Parol və məlumatların bərpası
+## 2. PIN, Təhlükəsizlik açarı və məlumatların bərpası
 
-- Şifrələmə açarı parolunuzdan yaradılır. Parol heç yerdə saxlanılmır və tərtibatçı onu bərpa edə bilməz.
-- **Parolu unutsanız və ya bərpa sənədini itirsəniz, şifrələnmiş fayllarınıza bir daha çıxış mümkün olmayacaq.** Bu, təhlükəsizlik dizaynının nəticəsidir.
-- Parolu və bərpa sənədini təhlükəsiz saxlamaq sizin məsuliyyətinizdir.
+- **PIN** yalnız bu telefonda proqramı açır. Fayllarınız PIN ilə şifrələnmir.
+- **Təhlükəsizlik açarı** Google Drive-a ilk qoşulanda təyin edilir və şifrələmə açarı ondan yaradılır. Açar heç yerdə saxlanılmır və tərtibatçı onu bərpa edə bilməz.
+- **Təhlükəsizlik açarını unutsanız və açar sənədini itirsəniz, şifrələnmiş fayllarınıza bir daha çıxış mümkün olmayacaq.** Bu, təhlükəsizlik dizaynının nəticəsidir.
+- Açar sənədi (PDF) açarı açıq mətnlə saxlayır və faylları tək başına aça bilər. PIN, açar və sənədləri təhlükəsiz saxlamaq sizin məsuliyyətinizdir.
+- Google Drive-da yaratdığınız qovluqların adları şifrələnmir.
 
 ## 3. Sizin məsuliyyətiniz
 
@@ -23,7 +25,7 @@ eDrive fayllarınızı telefonda şifrələyib **sizin öz Google Drive hesabın
 
 ## 4. Zəmanət yoxdur
 
-Tətbiq **"olduğu kimi"** təqdim olunur, heç bir açıq və ya gizli zəmanət verilmir. Tətbiq hələ inkişaf mərhələsindədir (v0.x) və səhvlər ola bilər. Mühüm faylların yeganə nüsxəsini yalnız eDrive-da saxlamayın.
+Tətbiq **"olduğu kimi"** təqdim olunur, heç bir açıq və ya gizli zəmanət verilmir. Tətbiq hələ inkişaf mərhələsindədir və səhvlər ola bilər. Mühüm faylların yeganə nüsxəsini yalnız eDrive-da saxlamayın.
 
 ## 5. Məsuliyyətin məhdudlaşdırılması
 

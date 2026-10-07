@@ -1,17 +1,35 @@
 # Məlum problemlər və gələcək işlər
 
-Analiz tarixi: 2026-10-06 (v0.1.0). Hər bənd üçün: problem → təklif olunan həll. Prioritet: 🔴 yüksək · 🟡 orta · 🟢 aşağı.
+Analiz tarixi: 2026-10-06 (v0.1.0), yenilənib: 2026-10-07 (v1.2.0). Hər bənd üçün: problem → təklif olunan həll. Prioritet: 🔴 yüksək · 🟡 orta · 🟢 aşağı. ~~Üstündən xətt çəkilmiş~~ bəndlər həll olunub.
+
+## 1.2.0 modelindən qalan risklər
+
+1.2.0-da PIN yalnız proqramın qapısıdır, vault açarı (DEK) isə cihazda Keystore ilə sarılı saxlanılır. Şifrələmə alqoritmi zəifləməyib; risklər cihaz tərəfindədir. Ətraflı təhlil: "eDrive: risklər və təhlükəsizlik planı" sənədi.
+
+- 🟡 **4 rəqəmli PIN** (10 000 variant). Açıq telefonu əldə edən şəxs üçün yeganə maneə pilləli gözləmədir (1 dəq → 5 → 15 → 60).
+  → istəyə görə 6 rəqəmli PIN seçimi.
+- 🟡 **DEK cihazda daimi saxlanılır** (`DeviceKeyStore`). Root olunmuş və ya zərərli proqramla zədələnmiş cihazda PIN qapısı keçilə bilər.
+  → Keystore açarına `setUnlockedDeviceRequired(true)` və (varsa) `StrongBox`; kilid zamanı DEK yaddaşdan silinsin və deşifrə keşi təmizlənsin.
+- 🟢 **PIN sayğacı bazada** (`failedAttempts`, `lockedUntil`), root cihazda sıfırlana bilər; vaxt divar saatına əsaslanır.
+  → sayğacı Keystore HMAC ilə imzalamaq, `elapsedRealtime` istifadəsi.
+- 🟢 **Avtomatik kilid** yalnız fonda 60 san-dan sonra. → ekran sönəndə dərhal kilid, ayarlarda kilid vaxtı.
+- 🟡 **Açar sənədində Təhlükəsizlik açarı açıq yazılır** (istifadəçinin qərarı). Sənəd sızarsa, Drive-dakı faylları tək başına aça bilər.
+- 🟡 **Açar dəyişəndən sonra köhnə açar + köhnə `vault.json` nüsxəsi hələ də DEK-i açır.** Drive faylın əvvəlki versiyalarını bir müddət saxlaya bilər.
+  → dəyişmədən sonra `revisions.delete`; tam həll: DEK-i dəyişib faylları yenidən şifrələmək.
+- 🟡 **Qovluq adları Drive-da açıq mətndir** (dizayn qərarı). UI-da xəbərdarlıq var.
+- 🟢 **Argon2 parametrləri** (64 MiB) yeni vault-lar üçün artırıla bilər (128 MiB) — zəif telefonlarda sınaq lazımdır.
+- 🟢 **PIN-i dəyişmə:** məntiq var (`AccountRepository.changePin`), ekranda düymə yoxdur; PIN dəyişəndə yeni PIN sənədi.
+- 🟢 **PIN unudulsa** hələ heç bir yol yoxdur. → Təhlükəsizlik açarı ilə PIN-i sıfırlamaq.
+- 🟢 **Parol dəyişməsi bildirişi:** digər cihaz yalnız bildiriş göstərir; yeni açarı yenidən tələb etmək sonra nəzərdən keçiriləcək.
 
 ## Təhlükəsizlik
 
-- 🔴 **Parol gücü.** `vault.json` Drive-dadır, oflayn parol hücumu mümkündür; minimum cəmi 8 simvol (`AccountRepository.MIN_PASSWORD`).
-  → minimum 12 simvol və ya passphrase, zəiflik göstəricisi, tipik parol siyahısı yoxlaması.
-- 🔴 **KDF parametrləri yoxlanılmır.** `VaultKeys.unlock` / `adoptRemoteVault` parametrləri `vault.json`-dan olduğu kimi götürür (OOM/DoS riski).
+- ~~🔴 **Parol gücü.**~~ 1.2.0: Təhlükəsizlik açarı minimum 12 simvol, güc göstəricisi var. Qalan: tipik parol siyahısı yoxlaması.
+- 🔴 **KDF parametrləri yoxlanılmır.** `VaultKeys.unlock` / `VaultService.adopt` parametrləri `vault.json`-dan olduğu kimi götürür (OOM/DoS riski).
   → `algorithm == argon2id`, `version == 1`, memoryKiB ~19 MiB–512 MiB, iterations 2–10, parallelism 1–4; kənarını rədd et.
-- 🟡 **Parol dəyişdirmə yoxdur.** DEK dəyişmir, yalnız yeni salt + KEK ilə yenidən sarılır.
-  → lokal başlıq + Drive `vault.json` (`uploadSmall(existingId)`) yenilənsin; digər cihazlar girişdə təzə başlığı çəksin.
-- 🟡 **Bərpa PDF-i master parolu açıq mətnlə saxlayır** (`RecoveryPdf`).
-  → təsadüfi 256-bit bərpa açarı; DEK ikinci dəfə onunla sarılsın (`recoveryWrappedDek`).
+- ~~🟡 **Parol dəyişdirmə yoxdur.**~~ 1.2.0: Təhlükəsizlik açarının dəyişdirilməsi (`VaultKeys.rewrap`), digər cihazlar açılışda `keyId` ilə görür.
+- 🟡 **Açar sənədi açarı açıq mətnlə saxlayır** (`RecoveryDocuments`, 1.2.0-da istifadəçinin qərarı ilə).
+  → gələcəkdə: təsadüfi 256-bit bərpa açarı; DEK ikinci dəfə onunla sarılsın (`recoveryWrappedDek`).
 - 🟡 **Avtomatik kilid zamanlayıcı deyil.** `AutoLock` yalnız `onStart`-da yoxlayır; fonda DEK RAM-da qala bilər.
   → `onStop`-da zamanlayıcı (60 s), vaxt bitəndə `session.lock()`.
 - 🟢 **Zəif KDF parametrlərinin yüksəldilməsi.** Uğurlu girişdən sonra daha güclü parametrlərlə yenidən sarmaq.
@@ -19,9 +37,9 @@ Analiz tarixi: 2026-10-06 (v0.1.0). Hər bənd üçün: problem → təklif olun
 
 ## Metadata sızıntısı (Drive-da görünən)
 
-Məzmun, ad və miniatür şifrəlidir; amma kənardan görünür: istifadəçi adı (qovluq adı), fayl sayı, `.edrv` ölçüsü (≈ açıq mətn ölçüsü), `.meta` ölçüsü (miniatür var/yox), yükləmə/silmə vaxtları.
+Məzmun, ad və miniatür şifrəlidir; amma kənardan görünür: istifadəçinin yaratdığı qovluq adları (1.2.0), fayl sayı, `.edrv` ölçüsü (≈ açıq mətn ölçüsü), `.meta` ölçüsü (miniatür var/yox), yükləmə/silmə vaxtları.
 
-- 🟡 Qovluq adında istifadəçi adı əvəzinə `keyId`/təsadüfi ID (mövcud vault-lar üçün miqrasiya lazımdır).
+- ~~🟡 Qovluq adında istifadəçi adı~~ 1.2.0: `eDrive Storage/<istifadəçi adı>` artıq yoxdur, vault kökdədir (1.x qovluğu istifadəçi qovluğu kimi qalır).
 - 🟡 `.meta`-nı sabit ölçüyə doldur (`ItemManifest`-ə `pad` sahəsi, `ignoreUnknownKeys` buna icazə verir; `.edrv` formatı dəyişmir).
 - 🟢 `.edrv` ölçüsünü yuvarlaqlaşdırmaq → yeni format `v2` tələb edir (Spring Boot uyğunluğu pozulur; ayrıca qərar).
 - 🟡 README/PRIVACY dəqiqləşdirilsin: "fayl adları görünmür" natamamdır; istifadəçi adı, say, ölçü və vaxtlar görünür.
@@ -38,15 +56,15 @@ Məzmun, ad və miniatür şifrəlidir; amma kənardan görünür: istifadəçi 
 
 ## Yaddaş və keş
 
-- 🟡 `cache/blobs` heç vaxt təmizlənmir → LRU / ölçü limiti.
+- ~~🟡 `cache/blobs` heç vaxt təmizlənmir~~ — 2 GB limit, ən köhnələr silinir.
 - 🟡 `FileAccessService.decryptToMemory` böyük şəkillərdə OOM riski daşıyır (tam ByteArray) → `inSampleSize` / axınla deşifrə.
 
 ## Kiçik məsələlər
 
-- 🟢 Qeydiyyat ortasında proses ölsə, istifadəçi adı bərpa sənədi olmadan lokal olaraq "tutulmuş" qalır.
+- 🟢 Qeydiyyat ortasında proses ölsə, istifadəçi adı PIN sənədi olmadan lokal olaraq "tutulmuş" qalır (PIN ilə daxil olmaq mümkündür).
 - 🟢 `UserEntity` data class-ında `ByteArray` → `equals`/`hashCode` xəbərdarlığı.
-- 🟢 Testlər: `UploadService`/`SyncService` xəta yolları, `BiometricVault`, KDF parametr yoxlaması üçün test yoxdur.
-- 🟢 Hələ heç bir Room migration yoxdur (v1); ilk sxem dəyişikliyində `RELEASING.md` addımları izlənməlidir.
+- 🟢 Testlər: `UploadService`/`SyncService` şəbəkə xəta yolları və KDF parametr yoxlaması üçün test yoxdur. Keystore siniflərinin (`KeystorePinHasher`, `KeystoreDeviceKeys`, `AndroidBiometricGate`) testi yalnız cihazda mümkündür.
+- ~~🟢 Hələ heç bir Room migration yoxdur~~ — 1.2.0: Room 1 → 2 (`Migrations.MIGRATION_1_2` + `MigrationTest`).
 
 ## Planlaşdırılan funksiyalar
 
