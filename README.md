@@ -1,5 +1,7 @@
 # eDrive Android
 
+[![Download APK](https://img.shields.io/badge/Download-APK-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/abdullaevz/eDrive/releases/latest)
+
 **eDrive** — şəkil, video və sənədlərinizi öz Google Drive-ınızda **şifrəli** saxlayan Android tətbiqidir.
 
 ## Nə üçündür
