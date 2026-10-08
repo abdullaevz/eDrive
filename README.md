@@ -1,8 +1,48 @@
 # eDrive Android
 
-Kotlin + Jetpack Compose. Fayllar telefonda **AES-256-GCM** ilə şifrələnir və istifadəçinin öz Google Drive-ındakı **eDrive Storage** qovluğuna yalnız şifrəli halda yüklənir.
+**eDrive** — şəkil, video və sənədlərinizi öz Google Drive-ınızda **şifrəli** saxlayan Android tətbiqidir.
+
+## Nə üçündür
+
+Buludda saxlanan fayllar adətən xidmət tərəfindən oxuna bilir. eDrive faylları göndərməzdən əvvəl telefonun özündə şifrələyir. Drive-a yalnız oxunmaz məlumat çatır: məzmun da, fayl adları da, miniatürlər də şifrəlidir. Faylları yalnız sizin **Təhlükəsizlik açarınızı** bilən açır. Bu açarı nə Google, nə də tərtibatçı bilir.
+
+- Fayllar sizin öz Drive-ınızdadır, ayrıca server yoxdur.
+- Qalereya, qovluqlar, video və şəkil baxışı tətbiqin içindədir. Açılan fayl yaddaşda deşifrə olunur və diskə açıq halda yazılmır.
+- Bir neçə telefon eyni Drive-a qoşula bilər. Yeni telefonda açarı yazanda bütün fayllar geri gəlir.
 
 Məxfilik siyasəti: [PRIVACY.md](PRIVACY.md) · İstifadə şərtləri: [TERMS.md](TERMS.md). Tərtibatçı heç bir məlumat toplamır.
+
+## Texnologiyalar
+
+| Sahə | İstifadə olunan |
+|---|---|
+| Dil və UI | Kotlin, Jetpack Compose (Material 3), Navigation |
+| Arxitektura | MVVM, Hilt (DI), Kotlin Coroutines / Flow |
+| Lokal baza | Room (miqrasiyalarla), WorkManager (arxa fonda yükləmə) |
+| Şifrələmə | AES-256-GCM (JCA), STREAM chunk şifrəsi, Argon2id (argon2kt, native) |
+| Cihaz qoruması | Android Keystore (PIN yoxlaması, cihazda açar), BiometricPrompt |
+| Bulud | Google Drive REST API v3 (`drive.file` icazəsi), Google Identity AuthorizationClient, OkHttp |
+| Media | Media3 ExoPlayer (şifrəli mənbədən video), ExifInterface |
+| Digər | kotlinx.serialization, Android PDF (açar və PIN sənədləri) |
+| Test | JUnit 4, Robolectric, Roborazzi (ekran testləri), kotlinx-coroutines-test, Bouncy Castle (JVM-də Argon2id) |
+| Yığım | Gradle (Kotlin DSL, version catalog), AGP, KSP, R8; minSdk 26, Java 17 |
+
+## Necə işləyir
+
+1. **Hesab.** Proqram istifadəçi adı və 4 rəqəmli PIN ilə açılır (istəsəniz barmaq izi ilə). PIN yalnız bu telefondakı qapıdır, şifrələməyə təsiri yoxdur.
+2. **Drive-a qoşulma.** Drive-a ilk qoşulanda **Təhlükəsizlik açarı** (ən azı 12 simvol) təyin edirsiniz. Bu açardan təsadüfi bir əsas açar (DEK) qorunur və Drive-dakı `eDrive Storage/vault.json` faylında şifrəli halda saxlanılır. Açarın özü heç yerə yazılmır, onun üçün PDF sənədi verilir.
+3. **Gündəlik istifadə.** Açıq DEK telefonda Android Keystore ilə sarılı saxlanılır. PIN-dən sonra avtomatik açılır, açarı hər dəfə yazmaq lazım deyil.
+4. **Yükləmə.** Seçilən fayl telefonda öz təsadüfi açarı ilə AES-256-GCM-lə şifrələnir. Həmin açar DEK ilə sarılıb faylın başlığına qoyulur. Fayl adı və miniatür ayrıca `.meta` faylında şifrələnir. Arxa fonda Drive-a `<id>.edrv` + `<id>.meta` kimi gedir, istifadəçinin yaratdığı alt qovluqlara da.
+5. **Baxış.** Drive-dakı siyahı lokal indekslə sinxronlaşır. Miniatür və fayl açılanda DEK ilə yaddaşda deşifrə olunur.
+6. **Yeni telefon / ikinci cihaz.** Eyni Drive-a qoşulub Təhlükəsizlik açarını yazırsınız. `vault.json`-dan DEK açılır, fayllar və qovluqlar geri gəlir. Açar başqa cihazda dəyişsə, bu, açılışda aşkarlanır.
+7. **Ayrılma.** Drive-dan ayrılanda telefondakı bütün izlər (şifrəli nüsxələr, miniatürlər, cihaz açarı) silinir. Drive-dakı fayllara və qalereyadakı orijinallara toxunulmur.
+
+```
+Təhlükəsizlik açarı ──Argon2id──► KEK ──sarır──► DEK ──sarır──► hər faylın açarı ──► AES-256-GCM məzmun
+PIN / barmaq izi ──► yalnız proqramın qapısı (Keystore)
+```
+
+Şifrələmə formatı Spring Boot `eDrive` layihəsi ilə bayt-bayt eynidir (`.edrv` v1). Əlavə qoruma: ekran görüntüsü bloklanır, 60 saniyədən çox fonda qalan tətbiq kilidlənir, Android ehtiyat nüsxəsi söndürülüb.
 
 ## Yüklə
 
@@ -38,35 +78,6 @@ Tətbiq Google Drive-a OAuth ilə qoşulur. Öz yığımınızda "Google ilə qo
    4. **Credentials → Create credentials → OAuth client ID → Android**: paket adı (debug yığımı üçün sonuna `.debug` əlavə olunur) və 2-ci addımdakı SHA-1.
 
 Web client ID və ya API key **lazım deyil**: tətbiq yalnız Drive icazəsi istəyir (AuthorizationClient), e-poçtu isə Drive API-dən oxuyur.
-
-## Necə işləyir
-
-```
-PIN (4 rəqəm) ──► yalnız proqramın qapısı (Keystore HMAC ilə yoxlanılır, şifrələməyə təsiri yoxdur)
-
-Təhlükəsizlik açarı ──Argon2id (64 MiB)──► KEK ──► DEK (vault açarı)
-                                                   └──► hər faylın öz açarı (AES-256-GCM)
-DEK bu cihazda: Keystore açarı ilə sarılı (PIN-dən sonra avtomatik açılır), açıq halda yalnız RAM-da
-
-Yükləmə:  fayl → telefonda şifrələnir → outbox (yalnız şifrəli) → WorkManager → Drive
-Drive:    eDrive Storage/vault.json        (salt + şifrəli DEK, sirr deyil)
-                        /<id>.edrv          (şifrəli məzmun)
-                        /<id>.meta          (şifrəli ad, tip, ölçü + miniatür)
-                        /<qovluq adı>/...   (istifadəçinin alt qovluqları — adı açıq mətndir)
-```
-
-- **Hesab:** istifadəçi adı + 4 rəqəmli PIN. PIN yalnız bu telefonda proqramı açır; 5 yanlış cəhddən sonra artan gözləmə (1 dəq → 5 → 15 → 60). Barmaq izi də yalnız qapıdır.
-- **Vault Drive-a bağlıdır:** Drive-a ilk qoşulanda "Təhlükəsizlik açarı" (ən azı 12 simvol) təyin edilir və `vault.json` yaranır. Eyni Drive-a qoşulan hər cihaz/hesab həmin açarla eyni faylları görür. Açar heç yerdə saxlanılmır.
-- **Sənədlər:** PIN sənədi (qeydiyyatda) və Təhlükəsizlik açarı sənədi (vault yaradılanda və açar dəyişəndə; açar + `vault.json` nüsxəsi) istifadəçinin seçdiyi yerə PDF kimi yazılır.
-- **Açarın dəyişdirilməsi** eyni DEK-i yeni açarla yenidən sarır — fayllar yenidən şifrələnmir. Digər cihazlar açılışda bunu `keyId` müqayisəsi ilə görür.
-- **Miniatürlər** şifrəli `.meta` daxilindədir. Qalereya dərhal açılır, telefondan silinmiş şəkillər də görünür. Tam şəkil toxunanda yaddaşda deşifrə olunur və diskə yazılmır.
-- **Yeni telefon:** istənilən adla hesab → Drive-a qoşulma → Təhlükəsizlik açarı. Fayllar və qovluqlar geri gəlir.
-- **Drive-dan ayrılma** telefondakı bütün izləri (şifrəli nüsxələr, miniatürlər, vault, cihaz açarı) silir; Drive-a və qalereyadakı orijinallara toxunulmur.
-- **Format** Spring Boot `eDrive` layihəsi ilə bayt-bayt eynidir (`.edrv` v1, test ilə yoxlanılıb).
-- **Təhlükəsizlik:**
-  - `FLAG_SECURE` ekran görüntüsünü bloklayır;
-  - tətbiq 60 saniyədən çox fonda qalsa avtomatik kilidlənir;
-  - Android ehtiyat nüsxəsi söndürülüb.
 
 ## Struktur
 
